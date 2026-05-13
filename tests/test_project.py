@@ -21,10 +21,10 @@ def test_validate_reports_missing_files(tmp_path: Path):
         project.validate(check_files=True)
 
 
-def test_add_roi_updates_manifest(tmp_path: Path):
+def test_add_contour_updates_manifest(tmp_path: Path):
     project = Project.create(tmp_path / "case")
-    project.add_roi("PTV", "PTV", "rois/PTV.mha", color="#e15759")
+    project.add_contour("PTV", "PTV", "contours/PTV.mha", color="#e15759")
 
     reopened = Project.open(project.root)
 
-    assert reopened.manifest["rois"][0]["id"] == "PTV"
+    assert reopened.manifest["contours"][0]["id"] == "PTV"

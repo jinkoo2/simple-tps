@@ -17,6 +17,9 @@
   - Demo project manifest under `examples/demo-project`.
 - Added Docker support for running the current CLI scaffold in a container.
 - Reserved host port `8013` in Docker Compose for the future app/API service.
+- Standardized project terminology on contour/contours in docs, schema, core
+  library, examples, and tests.
+- Added initial `simple-tps contour add` CLI command.
 
 ## Open Implementation Notes
 

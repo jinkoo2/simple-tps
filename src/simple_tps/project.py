@@ -16,7 +16,7 @@ class ProjectValidationError(ValueError):
 class Project:
     """A portable Simple TPS project folder.
 
-    The project folder stores a `project.json` manifest plus image, dose, ROI,
+    The project folder stores a `project.json` manifest plus image, dose, contour,
     plan, DICOM, and derived files in ordinary subdirectories.
     """
 
@@ -29,7 +29,7 @@ class Project:
     def create(cls, root: str | Path, patient_id: str = "demo", patient_name: str = "Demo Patient") -> "Project":
         root_path = Path(root).resolve()
         root_path.mkdir(parents=True, exist_ok=True)
-        for child in ("images", "doses", "rois", "plans", "dicom/original", "derived", "logs"):
+        for child in ("images", "doses", "contours", "plans", "dicom/original", "derived", "logs"):
             (root_path / child).mkdir(parents=True, exist_ok=True)
 
         manifest = {
@@ -46,7 +46,7 @@ class Project:
                     "path": "images/ct.mha",
                 }
             ],
-            "rois": [],
+            "contours": [],
             "doses": [],
             "plans": [],
         }
@@ -93,7 +93,7 @@ class Project:
         if not isinstance(manifest.get("volumes"), list) or not manifest["volumes"]:
             errors.append("volumes must contain at least one volume")
 
-        for collection_name in ("volumes", "rois", "doses", "plans"):
+        for collection_name in ("volumes", "contours", "doses", "plans"):
             collection = manifest.get(collection_name, [])
             if not isinstance(collection, list):
                 errors.append(f"{collection_name} must be a list")
@@ -116,16 +116,16 @@ class Project:
             "patient": self.manifest.get("patient", {}),
             "primary_image": self.manifest.get("primary_image"),
             "volumes": len(self.manifest.get("volumes", [])),
-            "rois": len(self.manifest.get("rois", [])),
+            "contours": len(self.manifest.get("contours", [])),
             "doses": len(self.manifest.get("doses", [])),
             "plans": len(self.manifest.get("plans", [])),
         }
 
-    def add_roi(self, roi_id: str, name: str, path: str, color: str | None = None) -> None:
-        roi = {"id": roi_id, "name": name, "path": path}
+    def add_contour(self, contour_id: str, name: str, path: str, color: str | None = None) -> None:
+        contour = {"id": contour_id, "name": name, "path": path}
         if color:
-            roi["color"] = color
-        self.manifest.setdefault("rois", []).append(roi)
+            contour["color"] = color
+        self.manifest.setdefault("contours", []).append(contour)
         self.save()
 
     def add_dose(self, dose_id: str, path: str, units: str = "Gy", reference_image: str | None = None) -> None:
@@ -148,8 +148,8 @@ class Project:
         for key in ("id", "path"):
             if not item.get(key):
                 errors.append(f"{collection_name} item missing {key}")
-        if collection_name == "rois" and not item.get("name"):
-            errors.append("roi item missing name")
+        if collection_name == "contours" and not item.get("name"):
+            errors.append("contour item missing name")
         if collection_name == "doses" and item.get("units") not in ("Gy", "cGy"):
             errors.append("dose units must be Gy or cGy")
         path = item.get("path")

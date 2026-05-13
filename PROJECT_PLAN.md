@@ -20,7 +20,7 @@ large infrastructure unless it is clearly needed.
 
 1. Open a patient/study workspace.
 2. Load CT volume from `.mha`.
-3. Load or create ROI masks.
+3. Load or create contour masks.
 4. Display dose overlays and dose color wash.
 5. Inspect axial/coronal/sagittal views.
 6. Show basic DVH and point dose readouts.
@@ -33,7 +33,7 @@ large infrastructure unless it is clearly needed.
 
 - TypeScript.
 - NiiVue for volume visualization.
-- A small state layer for active patient, volumes, ROIs, dose, view state, and UI
+- A small state layer for active patient, volumes, contours, dose, view state, and UI
   selections.
 - Keep the UI quiet and work-focused: viewer-first layout, side panels for data
   and tools, bottom/status area for coordinates and dose readout.
@@ -82,8 +82,8 @@ The core library should own:
 - Manifest validation.
 - MHA loading/saving helpers.
 - DICOM import/export helpers.
-- ROI and dose metadata operations.
-- Dose and ROI statistics.
+- contour and dose metadata operations.
+- Dose and contour statistics.
 - Planning metadata operations.
 
 The CLI should be a thin wrapper around the same core library, for example:
@@ -92,11 +92,11 @@ The CLI should be a thin wrapper around the same core library, for example:
 simple-tps init ./case-001
 simple-tps import dicom ./case-001 ./dicom-folder
 simple-tps import mha ./case-001 --ct ct.mha
-simple-tps roi add ./case-001 --name PTV --mask rois/PTV.mha --color "#e15759"
+simple-tps contour add ./case-001 --name PTV --mask contours/PTV.mha --color "#e15759"
 simple-tps dose add ./case-001 dose.mha --units Gy
 simple-tps plan import ./case-001 plan.json
 simple-tps validate ./case-001
-simple-tps dvh ./case-001 --dose dose_primary --roi PTV
+simple-tps dvh ./case-001 --dose dose_primary --contour PTV
 ```
 
 Python scripting should expose a stable package API, for example:
@@ -106,9 +106,9 @@ from simple_tps import Project
 
 p = Project.open("./case-001")
 dose = p.dose("dose_primary")
-ptv = p.roi("PTV")
+ptv = p.contour("PTV")
 
-print(dose.mean_in_roi(ptv))
+print(dose.mean_in_contour(ptv))
 p.save()
 ```
 
@@ -137,7 +137,7 @@ case-name/
     ct.mha
   doses/
     dose_primary.mha
-  rois/
+  contours/
     BODY.mha
     PTV.mha
     Rectum.mha
@@ -181,11 +181,11 @@ Store case-level metadata and references:
       "path": "images/ct.mha"
     }
   ],
-  "rois": [
+  "contours": [
     {
       "id": "PTV",
       "name": "PTV",
-      "path": "rois/PTV.mha",
+      "path": "contours/PTV.mha",
       "color": "#e15759"
     }
   ],
@@ -219,7 +219,7 @@ Use `.mha` for internal volumes:
 
 - CT image.
 - Dose grid.
-- ROI binary masks.
+- contour binary masks.
 - Derived/resampled volumes.
 
 Keep DICOM import/export as boundary functionality:
@@ -232,7 +232,7 @@ Important details:
 
 - Define one coordinate convention early.
 - Store origin, spacing, and direction consistently.
-- Validate that every ROI/dose grid aligns with its reference image.
+- Validate that every contour/dose grid aligns with its reference image.
 - Record dose units explicitly: Gy vs cGy.
 
 ## Core Modules
@@ -242,14 +242,14 @@ Important details:
 - NiiVue volume loading.
 - CT window/level controls.
 - Dose overlay controls.
-- ROI overlay controls.
+- contour overlay controls.
 - Crosshair, voxel coordinate, patient coordinate, and sampled dose.
 
 ### Data Model
 
 - Project manifest parser/writer.
 - Volume registry.
-- ROI registry.
+- contour registry.
 - Dose registry.
 - Validation for spacing/origin/direction compatibility.
 
@@ -266,7 +266,7 @@ Important details:
 Start simple:
 
 - Display masks.
-- Toggle ROI visibility/color.
+- Toggle contour visibility/color.
 - Basic brush/editing can come later.
 
 Later:
@@ -274,7 +274,7 @@ Later:
 - Slice brush.
 - Polygon contour.
 - Interpolation between slices.
-- Boolean ROI operations.
+- Boolean contour operations.
 
 ### Dose Tools
 
@@ -283,7 +283,7 @@ Start simple:
 - Dose overlay.
 - Dose value at cursor.
 - Max/mean dose summary.
-- DVH for selected ROIs.
+- DVH for selected contours.
 
 Later:
 
@@ -313,13 +313,13 @@ Later:
 - Choose app shell: browser prototype vs Tauri from day one.
 - Define project folder schema.
 - Define coordinate convention.
-- Choose whether masks are binary `.mha` per ROI or multi-label `.mha`.
+- Choose whether masks are binary `.mha` per contour or multi-label `.mha`.
 
 Recommended initial choice:
 
 - Browser/Vite prototype.
 - Portable project folder.
-- One binary `.mha` per ROI.
+- One binary `.mha` per contour.
 - `project.json` as source of truth.
 
 ### Milestone 1: Viewer Prototype
@@ -329,9 +329,9 @@ Recommended initial choice:
 - Show cursor coordinates.
 - Save/reopen a minimal `project.json`.
 
-### Milestone 2: Dose and ROI Display
+### Milestone 2: Dose and Contour Display
 
-- Load ROI masks.
+- Load contour masks.
 - Load dose `.mha`.
 - Toggle overlays.
 - Sample dose at cursor.
@@ -365,15 +365,15 @@ Recommended initial choice:
 - Add `simple-tps run SCRIPT --project PROJECT_DIR`.
 - Provide script examples for:
   - Printing case metadata.
-  - Adding an ROI mask.
-  - Computing ROI dose statistics.
+  - Adding a contour mask.
+  - Computing contour dose statistics.
   - Exporting a simple report.
 - Clearly label scripts as trusted local code execution.
 
 ### Milestone 7: Analysis Tools
 
 - DVH.
-- ROI statistics.
+- Contour statistics.
 - Dose statistics.
 - Screenshot/export.
 
@@ -388,7 +388,7 @@ Recommended initial choice:
 
 - Should this be desktop-first with Tauri, or browser-first with optional desktop
   wrapper?
-- Should ROI storage be one binary mask per ROI or a single label map?
+- Should contour storage be one binary mask per contour or a single label map?
 - Should project files be human-editable JSON only, or should there be an app
   SQLite index later?
 - How much DICOM fidelity is needed in version 1?
@@ -402,7 +402,7 @@ Recommended initial choice:
 
 - Coordinate mismatches between DICOM, `.mha`, NiiVue, and dose engines.
 - Browser filesystem APIs may be limiting without Tauri/Electron.
-- ROI editing can become complex quickly.
+- Contour editing can become complex quickly.
 - DICOM RTSTRUCT conversion needs careful validation.
 - Python scripting is powerful but unsafe for untrusted scripts.
 - Clinical-looking software needs clear non-clinical/research labeling unless
@@ -424,4 +424,4 @@ simple-tps/
 ```
 
 Then create a minimal Vite/NiiVue app that can open a project folder and display
-`ct.mha`, ROI masks, and dose overlays.
+`ct.mha`, contour masks, and dose overlays.

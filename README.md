@@ -68,6 +68,12 @@ Validate the manifest and referenced files:
 simple-tps validate cases/case-001
 ```
 
+Add a contour mask to the manifest:
+
+```bash
+simple-tps contour add cases/case-001 --name PTV --mask contours/PTV.mha --color "#e15759"
+```
+
 Run a trusted Python automation script:
 
 ```bash
@@ -75,7 +81,8 @@ simple-tps run examples/scripts/inspect_project.py --project examples/demo-proje
 ```
 
 The project manifest is `project.json` inside each project folder. Image, dose,
-ROI, plan, and DICOM files are stored as ordinary files under that folder.
+contour mask, plan, and DICOM files are stored as ordinary files under that
+folder.
 
 ## Docker Usage
 

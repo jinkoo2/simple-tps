@@ -12,7 +12,7 @@
       "path": "images/ct.mha"
     }
   ],
-  "rois": [],
+  "contours": [],
   "doses": [],
   "plans": []
 }

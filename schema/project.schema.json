@@ -24,9 +24,9 @@
       "type": "array",
       "items": { "$ref": "#/$defs/volume" }
     },
-    "rois": {
+    "contours": {
       "type": "array",
-      "items": { "$ref": "#/$defs/roi" },
+      "items": { "$ref": "#/$defs/contour" },
       "default": []
     },
     "doses": {
@@ -52,7 +52,7 @@
       },
       "additionalProperties": true
     },
-    "roi": {
+    "contour": {
       "type": "object",
       "required": ["id", "name", "path"],
       "properties": {

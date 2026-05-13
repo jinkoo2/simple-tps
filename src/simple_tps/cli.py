@@ -40,6 +40,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_inspect.add_argument("project_dir")
     p_inspect.set_defaults(func=cmd_inspect)
 
+    p_contour = sub.add_parser("contour", help="manage contour masks")
+    contour_sub = p_contour.add_subparsers(required=True)
+
+    p_contour_add = contour_sub.add_parser("add", help="add a contour mask to a project")
+    p_contour_add.add_argument("project_dir")
+    p_contour_add.add_argument("--name", required=True)
+    p_contour_add.add_argument("--mask", required=True, help="project-relative mask path")
+    p_contour_add.add_argument("--id", dest="contour_id", default=None)
+    p_contour_add.add_argument("--color", default=None)
+    p_contour_add.set_defaults(func=cmd_contour_add)
+
     p_run = sub.add_parser("run", help="run a trusted Python automation script")
     p_run.add_argument("script")
     p_run.add_argument("--project", required=True, help="project folder passed to the script")
@@ -64,6 +75,14 @@ def cmd_validate(args: argparse.Namespace) -> int:
 def cmd_inspect(args: argparse.Namespace) -> int:
     project = Project.open(args.project_dir)
     print(json.dumps(project.inspect(), indent=2))
+    return 0
+
+
+def cmd_contour_add(args: argparse.Namespace) -> int:
+    project = Project.open(args.project_dir)
+    contour_id = args.contour_id or args.name
+    project.add_contour(contour_id, args.name, args.mask, color=args.color)
+    print(f"added contour: {contour_id}")
     return 0
 
 
