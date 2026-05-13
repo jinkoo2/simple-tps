@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/simple-tps/project.schema.json",
+  "title": "Simple TPS Project",
+  "type": "object",
+  "required": ["schema_version", "primary_image", "volumes"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "patient": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "primary_image": {
+      "type": "string"
+    },
+    "volumes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/volume" }
+    },
+    "rois": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/roi" },
+      "default": []
+    },
+    "doses": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dose" },
+      "default": []
+    },
+    "plans": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/plan" },
+      "default": []
+    }
+  },
+  "$defs": {
+    "volume": {
+      "type": "object",
+      "required": ["id", "type", "path"],
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "path": { "type": "string" },
+        "modality": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "roi": {
+      "type": "object",
+      "required": ["id", "name", "path"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "path": { "type": "string" },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        }
+      },
+      "additionalProperties": true
+    },
+    "dose": {
+      "type": "object",
+      "required": ["id", "path", "units"],
+      "properties": {
+        "id": { "type": "string" },
+        "path": { "type": "string" },
+        "units": {
+          "type": "string",
+          "enum": ["Gy", "cGy"]
+        },
+        "reference_image": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "plan": {
+      "type": "object",
+      "required": ["id", "path"],
+      "properties": {
+        "id": { "type": "string" },
+        "path": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

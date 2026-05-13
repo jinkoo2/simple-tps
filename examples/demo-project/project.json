@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "patient": {
+    "id": "demo",
+    "name": "Demo Patient"
+  },
+  "primary_image": "images/ct.mha",
+  "volumes": [
+    {
+      "id": "ct",
+      "type": "CT",
+      "path": "images/ct.mha"
+    }
+  ],
+  "rois": [],
+  "doses": [],
+  "plans": []
+}

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simple-tps"
+version = "0.1.0"
+description = "Local-first simple TPS core library and CLI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Simple TPS Developers" }
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8"
+]
+
+[project.scripts]
+simple-tps = "simple_tps.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
