@@ -9,6 +9,13 @@ Generated working files:
     contours/*.mha
     plans/plan.json
 
+Generated metadata files:
+    images/ct.json
+    doses/rtdose-*.json
+    contours/*.json
+    contours/rtstruct.json
+    plans/plan.metadata.json
+
 Run from the repository root:
     python examples/scripts/import_eclipse_dicom_patient.py
 
@@ -53,19 +60,11 @@ FILENAME_PREFIX_GROUPS = {
 def main() -> int:
     args = parse_args()
     source = args.source.resolve()
-    project_root = args.project.resolve()
 
     if not source.exists():
         raise SystemExit(f"Source folder does not exist: {source}")
     if not source.is_dir():
         raise SystemExit(f"Source path is not a folder: {source}")
-
-    manifest_path = project_root / Project.MANIFEST_NAME
-    if manifest_path.exists() and not args.overwrite:
-        raise SystemExit(
-            f"Project already exists: {project_root}\n"
-            "Use --overwrite to update its manifest and overwrite copied DICOM files."
-        )
 
     grouped = group_dicom_files(source)
     if not grouped["ct"]:
@@ -75,29 +74,30 @@ def main() -> int:
     if not grouped["rtstruct"]:
         raise SystemExit(f"No RTSTRUCT DICOM file found in: {source}")
 
-    project = Project.create(
-        project_root,
-        patient_id=args.patient_id,
-        patient_name=args.patient_name,
-    )
+    source_metadata = read_source_metadata(grouped)
+    patient_id = args.patient_id or source_metadata["patient"]["id"] or "unknown-patient"
+    patient_name = args.patient_name or source_metadata["patient"]["name"] or patient_id
+    project_root = (args.project or Path("patients") / make_id(patient_id)).resolve()
+    manifest_path = project_root / Project.MANIFEST_NAME
 
-    copied = {
-        group_name: copy_group(project, files, group_name, overwrite=args.overwrite)
-        for group_name, files in grouped.items()
-        if files
-    }
+    if manifest_path.exists():
+        project = Project.open(project_root)
+        project.manifest["patient"] = {"id": patient_id, "name": patient_name}
+    else:
+        project = Project.create(project_root, patient_id=patient_id, patient_name=patient_name)
 
+    copied = {group_name: copy_group(project, files, group_name, overwrite=args.overwrite) for group_name, files in grouped.items() if files}
     ct_dir = "dicom/original/ct"
     ct_image = None
     if not args.no_convert_images:
-        ct_image = convert_ct_series_to_mha(project, ct_dir)
+        ct_image = convert_ct_series_to_mha(project, ct_dir, source_metadata["ct"], args.overwrite)
     dose_images = []
     contour_masks = []
     plan_json = None
     if not args.no_convert_images:
-        dose_images = convert_doses_to_mha(project, copied.get("rtdose", []), ct_image or ct_dir)
-        contour_masks = convert_rtstruct_to_masks(project, copied.get("rtstruct", []), ct_image)
-        plan_json = convert_rtplan_to_json(project, copied.get("rtplan", []))
+        dose_images = convert_doses_to_mha(project, copied.get("rtdose", []), ct_image or ct_dir, args.overwrite)
+        contour_masks = convert_rtstruct_to_masks(project, copied.get("rtstruct", []), ct_image, args.overwrite)
+        plan_json = convert_rtplan_to_json(project, copied.get("rtplan", []), args.overwrite)
 
     project.manifest["primary_image"] = ct_image or ct_dir
     project.manifest["volumes"] = [
@@ -118,6 +118,7 @@ def main() -> int:
                 "path": ct_image,
                 "format": "MHA",
                 "source": ct_dir,
+                "metadata": "images/ct.json",
             },
         )
     project.manifest["plans"] = build_plan_manifest_entries(plan_json, copied.get("rtplan", []))
@@ -167,9 +168,9 @@ def main() -> int:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE, help="Eclipse DICOM export folder")
-    parser.add_argument("--project", type=Path, default=DEFAULT_PROJECT, help="Destination Simple TPS patient folder")
-    parser.add_argument("--patient-id", default="eclipse-001")
-    parser.add_argument("--patient-name", default="Eclipse Demo Patient")
+    parser.add_argument("--project", type=Path, default=None, help=f"Destination Simple TPS patient folder; default is derived from DICOM PatientID, for example {DEFAULT_PROJECT}")
+    parser.add_argument("--patient-id", default=None, help="Patient ID; default is read from DICOM")
+    parser.add_argument("--patient-name", default=None, help="Patient name; default is read from DICOM")
     parser.add_argument("--overwrite", action="store_true", help="Update an existing patient manifest and copied files")
     parser.add_argument(
         "--no-convert-images",
@@ -208,6 +209,15 @@ def read_modality(file_path: Path) -> str | None:
     return str(getattr(dataset, "Modality", "")).upper() or None
 
 
+def read_source_metadata(grouped: dict[str, list[Path]]) -> dict[str, Any]:
+    ct_datasets = [read_dicom_dataset(path, stop_before_pixels=True) for path in grouped["ct"]]
+    ct_first = ct_datasets[0]
+    return {
+        "patient": patient_metadata(ct_first),
+        "ct": ct_series_metadata(ct_datasets),
+    }
+
+
 def copy_group(project: Project, files: list[Path], group_name: str, overwrite: bool) -> list[str]:
     destination = project.root / "dicom" / "original" / group_name
     destination.mkdir(parents=True, exist_ok=True)
@@ -221,7 +231,7 @@ def copy_group(project: Project, files: list[Path], group_name: str, overwrite: 
     return relative_paths
 
 
-def convert_ct_series_to_mha(project: Project, ct_dir: str) -> str:
+def convert_ct_series_to_mha(project: Project, ct_dir: str, ct_metadata: dict[str, Any], overwrite: bool) -> str:
     try:
         import SimpleITK as sitk
     except ImportError as exc:
@@ -231,6 +241,11 @@ def convert_ct_series_to_mha(project: Project, ct_dir: str) -> str:
         ) from exc
 
     dicom_dir = project.resolve_path(ct_dir)
+    output_path = project.root / "images" / "ct.mha"
+    metadata_path = output_path.with_suffix(".json")
+    if object_already_imported(output_path, metadata_path, ct_metadata, ["series_instance_uid"], overwrite):
+        return output_path.relative_to(project.root).as_posix()
+
     series_ids = list(sitk.ImageSeriesReader.GetGDCMSeriesIDs(str(dicom_dir)) or [])
     if not series_ids:
         raise SystemExit(f"No readable CT DICOM series found in: {dicom_dir}")
@@ -245,20 +260,51 @@ def convert_ct_series_to_mha(project: Project, ct_dir: str) -> str:
     reader.SetFileNames(file_names)
     image = reader.Execute()
 
-    output_path = project.root / "images" / "ct.mha"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    sitk.WriteImage(image, str(output_path), useCompression=True)
+    write_image(image, output_path)
+    write_json(
+        metadata_path,
+        {
+            **ct_metadata,
+            "object_type": "CT",
+            "format": "MHA",
+            "path": output_path.relative_to(project.root).as_posix(),
+            "source": ct_dir,
+            "size": list(image.GetSize()),
+            "spacing": list(image.GetSpacing()),
+            "origin": list(image.GetOrigin()),
+            "direction": list(image.GetDirection()),
+            "compression": True,
+        },
+    )
     return output_path.relative_to(project.root).as_posix()
 
 
-def convert_doses_to_mha(project: Project, dose_paths: list[str], reference_image: str) -> list[dict[str, Any]]:
+def convert_doses_to_mha(project: Project, dose_paths: list[str], reference_image: str, overwrite: bool) -> list[dict[str, Any]]:
     converted = []
     for index, dose_path in enumerate(dose_paths, start=1):
         dataset = read_dicom_dataset(project.resolve_path(dose_path))
-        image = rtdose_dataset_to_image(dataset)
         output_path = project.root / "doses" / f"rtdose-{index}.mha"
+        metadata_path = output_path.with_suffix(".json")
+        metadata = dose_metadata(dataset, dose_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        write_image(image, output_path)
+        if not object_already_imported(output_path, metadata_path, metadata, ["sop_instance_uid"], overwrite):
+            image = rtdose_dataset_to_image(dataset)
+            write_image(image, output_path)
+            write_json(
+                metadata_path,
+                {
+                    **metadata,
+                    "format": "MHA",
+                    "path": output_path.relative_to(project.root).as_posix(),
+                    "reference_image": reference_image,
+                    "size": list(image.GetSize()),
+                    "spacing": list(image.GetSpacing()),
+                    "origin": list(image.GetOrigin()),
+                    "direction": list(image.GetDirection()),
+                    "compression": True,
+                },
+            )
         converted.append(
             {
                 "id": f"rtdose-{index}",
@@ -266,6 +312,7 @@ def convert_doses_to_mha(project: Project, dose_paths: list[str], reference_imag
                 "units": normalize_dose_units(getattr(dataset, "DoseUnits", "Gy")),
                 "format": "MHA",
                 "source": dose_path,
+                "metadata": metadata_path.relative_to(project.root).as_posix(),
                 "reference_image": reference_image,
                 "dose_type": str(getattr(dataset, "DoseType", "")),
                 "dose_summation_type": str(getattr(dataset, "DoseSummationType", "")),
@@ -274,7 +321,7 @@ def convert_doses_to_mha(project: Project, dose_paths: list[str], reference_imag
     return converted
 
 
-def convert_rtstruct_to_masks(project: Project, rtstruct_paths: list[str], reference_image: str | None) -> list[dict[str, Any]]:
+def convert_rtstruct_to_masks(project: Project, rtstruct_paths: list[str], reference_image: str | None, overwrite: bool) -> list[dict[str, Any]]:
     if not reference_image:
         return []
 
@@ -292,7 +339,8 @@ def convert_rtstruct_to_masks(project: Project, rtstruct_paths: list[str], refer
     masks = []
 
     for rtstruct_path in rtstruct_paths:
-        dataset = read_dicom_dataset(project.resolve_path(rtstruct_path))
+        dataset = read_dicom_dataset(project.resolve_path(rtstruct_path), stop_before_pixels=True)
+        write_json(project.root / "contours" / "rtstruct.json", rtstruct_metadata(dataset, rtstruct_path))
         used_ids: set[str] = set()
         roi_names = {
             int(roi.ROINumber): str(roi.ROIName)
@@ -310,12 +358,36 @@ def convert_rtstruct_to_masks(project: Project, rtstruct_paths: list[str], refer
             if not mask.any():
                 continue
 
-            mask_image = sitk.GetImageFromArray(mask)
-            mask_image.CopyInformation(reference)
             contour_id = unique_id(make_id(roi_name), used_ids)
-            output_path = project.root / "contours" / f"{contour_id}.mha"
+            output_path = project.root / "contours" / f"{safe_filename(roi_name)}.mha"
+            metadata_path = output_path.with_suffix(".json")
+            metadata = contour_metadata(dataset, roi_contour, rtstruct_path, roi_name, roi_number)
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            write_image(mask_image, output_path)
+            if not object_already_imported(
+                output_path,
+                metadata_path,
+                metadata,
+                ["structure_set_sop_instance_uid", "roi_number"],
+                overwrite,
+            ):
+                mask_image = sitk.GetImageFromArray(mask)
+                mask_image.CopyInformation(reference)
+                write_image(mask_image, output_path)
+                write_json(
+                    metadata_path,
+                    {
+                        **metadata,
+                        "format": "MHA",
+                        "path": output_path.relative_to(project.root).as_posix(),
+                        "reference_image": reference_image,
+                        "size": list(mask_image.GetSize()),
+                        "spacing": list(mask_image.GetSpacing()),
+                        "origin": list(mask_image.GetOrigin()),
+                        "direction": list(mask_image.GetDirection()),
+                        "voxel_count": int(mask.sum()),
+                        "compression": True,
+                    },
+                )
             masks.append(
                 {
                     "id": contour_id,
@@ -323,6 +395,7 @@ def convert_rtstruct_to_masks(project: Project, rtstruct_paths: list[str], refer
                     "path": output_path.relative_to(project.root).as_posix(),
                     "format": "MHA",
                     "source": rtstruct_path,
+                    "metadata": metadata_path.relative_to(project.root).as_posix(),
                     "roi_number": roi_number,
                     "color": contour_color(roi_contour),
                 }
@@ -330,17 +403,19 @@ def convert_rtstruct_to_masks(project: Project, rtstruct_paths: list[str], refer
     return masks
 
 
-def convert_rtplan_to_json(project: Project, rtplan_paths: list[str]) -> str | None:
+def convert_rtplan_to_json(project: Project, rtplan_paths: list[str], overwrite: bool) -> str | None:
     if not rtplan_paths:
         return None
 
-    plans = [extract_rtplan(read_dicom_dataset(project.resolve_path(path)), path) for path in rtplan_paths]
+    plans = [extract_rtplan(read_dicom_dataset(project.resolve_path(path), stop_before_pixels=True), path) for path in rtplan_paths]
     output = plans[0] if len(plans) == 1 else {"plans": plans}
     output_path = project.root / "plans" / "plan.json"
+    metadata_path = project.root / "plans" / "plan.metadata.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2)
-        f.write("\n")
+    metadata = plan_metadata(read_dicom_dataset(project.resolve_path(rtplan_paths[0]), stop_before_pixels=True), rtplan_paths[0])
+    if not object_already_imported(output_path, metadata_path, metadata, ["sop_instance_uid"], overwrite):
+        write_json(output_path, output)
+        write_json(metadata_path, metadata)
     return output_path.relative_to(project.root).as_posix()
 
 
@@ -351,6 +426,7 @@ def build_plan_manifest_entries(plan_json: str | None, rtplan_paths: list[str]) 
                 "id": "plan",
                 "path": plan_json,
                 "format": "SIMPLE_TPS_PLAN_JSON",
+                "metadata": "plans/plan.metadata.json",
                 "source": rtplan_paths[0] if rtplan_paths else None,
             }
         ]
@@ -388,6 +464,149 @@ def build_dose_manifest_entries(
         }
         for index, path in enumerate(rtdose_paths)
     ]
+
+
+def patient_metadata(dataset: Any) -> dict[str, Any]:
+    return {
+        "id": dicom_str(dataset, "PatientID"),
+        "name": dicom_str(dataset, "PatientName"),
+        "birth_date": dicom_str(dataset, "PatientBirthDate"),
+        "sex": dicom_str(dataset, "PatientSex"),
+    }
+
+
+def ct_series_metadata(datasets: list[Any]) -> dict[str, Any]:
+    first = datasets[0]
+    sop_uids = [dicom_str(dataset, "SOPInstanceUID") for dataset in datasets]
+    instance_numbers = [int_or_none(getattr(dataset, "InstanceNumber", None)) for dataset in datasets]
+    return {
+        "object_type": "CT",
+        "patient": patient_metadata(first),
+        "study_instance_uid": dicom_str(first, "StudyInstanceUID"),
+        "series_instance_uid": dicom_str(first, "SeriesInstanceUID"),
+        "frame_of_reference_uid": dicom_str(first, "FrameOfReferenceUID"),
+        "study_id": dicom_str(first, "StudyID"),
+        "study_date": dicom_str(first, "StudyDate"),
+        "study_time": dicom_str(first, "StudyTime"),
+        "series_number": int_or_none(getattr(first, "SeriesNumber", None)),
+        "series_date": dicom_str(first, "SeriesDate"),
+        "series_time": dicom_str(first, "SeriesTime"),
+        "modality": dicom_str(first, "Modality"),
+        "manufacturer": dicom_str(first, "Manufacturer"),
+        "manufacturer_model_name": dicom_str(first, "ManufacturerModelName"),
+        "body_part_examined": dicom_str(first, "BodyPartExamined"),
+        "slice_count": len(datasets),
+        "sop_instance_uids": sop_uids,
+        "first_sop_instance_uid": sop_uids[0] if sop_uids else "",
+        "last_sop_instance_uid": sop_uids[-1] if sop_uids else "",
+        "instance_numbers": instance_numbers,
+        "image_orientation_patient": number_list(getattr(first, "ImageOrientationPatient", [])),
+        "pixel_spacing": number_list(getattr(first, "PixelSpacing", [])),
+        "slice_thickness": float_or_none(getattr(first, "SliceThickness", None)),
+        "spacing_between_slices": float_or_none(getattr(first, "SpacingBetweenSlices", None)),
+        "rows": int_or_none(getattr(first, "Rows", None)),
+        "columns": int_or_none(getattr(first, "Columns", None)),
+        "rescale_intercept": float_or_none(getattr(first, "RescaleIntercept", None)),
+        "rescale_slope": float_or_none(getattr(first, "RescaleSlope", None)),
+        "rescale_type": dicom_str(first, "RescaleType"),
+    }
+
+
+def dose_metadata(dataset: Any, source_path: str) -> dict[str, Any]:
+    return {
+        "object_type": "RTDOSE",
+        "source": source_path,
+        "patient": patient_metadata(dataset),
+        "study_instance_uid": dicom_str(dataset, "StudyInstanceUID"),
+        "series_instance_uid": dicom_str(dataset, "SeriesInstanceUID"),
+        "sop_instance_uid": dicom_str(dataset, "SOPInstanceUID"),
+        "frame_of_reference_uid": dicom_str(dataset, "FrameOfReferenceUID"),
+        "modality": dicom_str(dataset, "Modality"),
+        "dose_units": dicom_str(dataset, "DoseUnits"),
+        "dose_type": dicom_str(dataset, "DoseType"),
+        "dose_summation_type": dicom_str(dataset, "DoseSummationType"),
+        "dose_grid_scaling": float_or_none(getattr(dataset, "DoseGridScaling", None)),
+        "referenced_rtplan_sop_instance_uid": referenced_sop_uid(dataset, "ReferencedRTPlanSequence"),
+        "image_position_patient": number_list(getattr(dataset, "ImagePositionPatient", [])),
+        "image_orientation_patient": number_list(getattr(dataset, "ImageOrientationPatient", [])),
+        "pixel_spacing": number_list(getattr(dataset, "PixelSpacing", [])),
+        "grid_frame_offset_vector": number_list(getattr(dataset, "GridFrameOffsetVector", [])),
+        "rows": int_or_none(getattr(dataset, "Rows", None)),
+        "columns": int_or_none(getattr(dataset, "Columns", None)),
+        "frames": int_or_none(getattr(dataset, "NumberOfFrames", None)),
+    }
+
+
+def rtstruct_metadata(dataset: Any, source_path: str) -> dict[str, Any]:
+    roi_names = {
+        int(roi.ROINumber): str(roi.ROIName)
+        for roi in getattr(dataset, "StructureSetROISequence", [])
+    }
+    return {
+        "object_type": "RTSTRUCT",
+        "source": source_path,
+        "patient": patient_metadata(dataset),
+        "study_instance_uid": dicom_str(dataset, "StudyInstanceUID"),
+        "series_instance_uid": dicom_str(dataset, "SeriesInstanceUID"),
+        "sop_instance_uid": dicom_str(dataset, "SOPInstanceUID"),
+        "frame_of_reference_uid": dicom_str(dataset, "FrameOfReferenceUID"),
+        "structure_set_label": dicom_str(dataset, "StructureSetLabel"),
+        "structure_set_name": dicom_str(dataset, "StructureSetName"),
+        "structure_set_date": dicom_str(dataset, "StructureSetDate"),
+        "structure_set_time": dicom_str(dataset, "StructureSetTime"),
+        "rois": [
+            {
+                "roi_number": int(roi.ROINumber),
+                "name": str(roi.ROIName),
+                "generation_algorithm": dicom_str(roi, "ROIGenerationAlgorithm"),
+            }
+            for roi in getattr(dataset, "StructureSetROISequence", [])
+        ],
+        "contours": [
+            {
+                "roi_number": int(contour.ReferencedROINumber),
+                "name": roi_names.get(int(contour.ReferencedROINumber), ""),
+                "color": contour_color(contour),
+                "contour_count": len(getattr(contour, "ContourSequence", [])),
+            }
+            for contour in getattr(dataset, "ROIContourSequence", [])
+        ],
+    }
+
+
+def contour_metadata(dataset: Any, roi_contour: Any, source_path: str, roi_name: str, roi_number: int) -> dict[str, Any]:
+    return {
+        "object_type": "CONTOUR_MASK",
+        "source": source_path,
+        "patient": patient_metadata(dataset),
+        "study_instance_uid": dicom_str(dataset, "StudyInstanceUID"),
+        "series_instance_uid": dicom_str(dataset, "SeriesInstanceUID"),
+        "structure_set_sop_instance_uid": dicom_str(dataset, "SOPInstanceUID"),
+        "frame_of_reference_uid": dicom_str(dataset, "FrameOfReferenceUID"),
+        "roi_number": roi_number,
+        "name": roi_name,
+        "color": contour_color(roi_contour),
+        "contour_count": len(getattr(roi_contour, "ContourSequence", [])),
+    }
+
+
+def plan_metadata(dataset: Any, source_path: str) -> dict[str, Any]:
+    return {
+        "object_type": "RTPLAN",
+        "source": source_path,
+        "patient": patient_metadata(dataset),
+        "study_instance_uid": dicom_str(dataset, "StudyInstanceUID"),
+        "series_instance_uid": dicom_str(dataset, "SeriesInstanceUID"),
+        "sop_instance_uid": dicom_str(dataset, "SOPInstanceUID"),
+        "frame_of_reference_uid": dicom_str(dataset, "FrameOfReferenceUID"),
+        "label": dicom_str(dataset, "RTPlanLabel"),
+        "name": dicom_str(dataset, "RTPlanName"),
+        "date": dicom_str(dataset, "RTPlanDate"),
+        "time": dicom_str(dataset, "RTPlanTime"),
+        "manufacturer": dicom_str(dataset, "Manufacturer"),
+        "beam_count": len(getattr(dataset, "BeamSequence", [])),
+        "fraction_group_count": len(getattr(dataset, "FractionGroupSequence", [])),
+    }
 
 
 def rtdose_dataset_to_image(dataset: Any) -> Any:
@@ -565,7 +784,7 @@ def final_meterset_weight(control_points: list[Any]) -> float | None:
     return float_or_none(getattr(control_points[-1], "CumulativeMetersetWeight", None))
 
 
-def read_dicom_dataset(path: Path) -> Any:
+def read_dicom_dataset(path: Path, stop_before_pixels: bool = False) -> Any:
     try:
         import pydicom
     except ImportError as exc:
@@ -573,13 +792,57 @@ def read_dicom_dataset(path: Path) -> Any:
             "pydicom is required to import RTPLAN, RTSTRUCT, and RTDOSE.\n"
             "Install it with `python -m pip install -e \".[dicom]\"`."
         ) from exc
-    return pydicom.dcmread(path)
+    return pydicom.dcmread(path, stop_before_pixels=stop_before_pixels)
+
+
+def object_already_imported(
+    object_path: Path,
+    metadata_path: Path,
+    new_metadata: dict[str, Any],
+    uid_keys: list[str],
+    overwrite: bool,
+) -> bool:
+    if overwrite or not object_path.exists() or not metadata_path.exists():
+        return False
+    try:
+        old_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    return all(old_metadata.get(key) == new_metadata.get(key) for key in uid_keys)
 
 
 def write_image(image: Any, output_path: Path) -> None:
     import SimpleITK as sitk
 
     sitk.WriteImage(image, str(output_path), useCompression=True)
+
+
+def write_json(output_path: Path, payload: dict[str, Any]) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(json_safe(payload), f, indent=2)
+        f.write("\n")
+
+
+def json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def dicom_str(dataset: Any, name: str) -> str:
+    return str(getattr(dataset, name, "") or "")
+
+
+def referenced_sop_uid(dataset: Any, sequence_name: str) -> str:
+    sequence = getattr(dataset, sequence_name, None)
+    if not sequence:
+        return ""
+    return dicom_str(sequence[0], "ReferencedSOPInstanceUID")
 
 
 def normalize_dose_units(units: Any) -> str:
@@ -598,6 +861,11 @@ def make_id(value: str) -> str:
     return item_id or "item"
 
 
+def safe_filename(value: str) -> str:
+    filename = re.sub(r"[^a-zA-Z0-9_.-]+", "_", value.strip()).strip("._")
+    return filename or "item"
+
+
 def unique_id(item_id: str, used_ids: set[str]) -> str:
     if item_id not in used_ids:
         used_ids.add(item_id)
@@ -611,18 +879,26 @@ def unique_id(item_id: str, used_ids: set[str]) -> str:
 
 
 def float_or_none(value: Any) -> float | None:
-    if value is None:
+    if value is None or value == "":
         return None
-    return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def int_or_none(value: Any) -> int | None:
-    if value is None:
+    if value is None or value == "":
         return None
-    return int(value)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def number_list(values: Any) -> list[float]:
+    if values is None:
+        return []
     return [float(value) for value in values]
 
 

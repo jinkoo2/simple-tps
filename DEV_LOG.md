@@ -28,6 +28,10 @@
   SimpleITK by default.
 - Expanded the Eclipse DICOM import example to generate compressed MHA RTDOSE
   images, compressed MHA contour masks, and `plans/plan.json` from RTPLAN.
+- Added sidecar metadata JSON files for generated CT, dose, contour, structure,
+  and plan objects, plus UID-based duplicate detection for import skipping.
+- Updated DICOM import defaults to derive patient ID, patient name, and default
+  patient folder from source DICOM metadata when not provided.
 
 ## Open Implementation Notes
 

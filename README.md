@@ -102,8 +102,14 @@ stps inspect patients/eclipse-001
 The sample folder name on disk is `stereophan_IMRT_7beams`. This example copies
 CT, RTPLAN, RTDOSE, and RTSTRUCT files into `patients/eclipse-001/dicom/original`,
 writes compressed MHA working files for the CT, dose, and contour masks, creates
-`patients/eclipse-001/plans/plan.json`, and updates
-`patients/eclipse-001/project.json`.
+`patients/eclipse-001/plans/plan.json`, writes sidecar metadata JSON files next
+to each generated object, and updates `patients/eclipse-001/project.json`.
+
+If `--patient-id`, `--patient-name`, or `--project` are omitted, the importer
+uses patient metadata from the DICOM files and derives the patient folder from
+the DICOM PatientID. Existing generated objects are skipped when their sidecar
+metadata UIDs match the incoming DICOM objects; use `--overwrite` to regenerate
+them.
 
 Run a trusted Python automation script:
 
