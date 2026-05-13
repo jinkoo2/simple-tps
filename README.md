@@ -5,9 +5,9 @@ NiiVue for visualization and `.mha` files for working image data.
 
 Start with [PROJECT_PLAN.md](PROJECT_PLAN.md).
 
-## Local Setup
+## Installation
 
-Using the existing conda environment:
+### Option 1: Without Docker
 
 ```bash
 conda activate simple-tps
@@ -15,11 +15,32 @@ cd /home/jk/projects/tps/simple-tps
 python -m pip install -e .
 ```
 
-Check the CLI:
+Verify the install:
 
 ```bash
 simple-tps --help
 ```
+
+### Option 2: With Docker
+
+Build the image:
+
+```bash
+cd /home/jk/projects/tps/simple-tps
+docker compose build cli
+```
+
+Verify the Dockerized CLI:
+
+```bash
+docker compose run --rm cli --help
+```
+
+The Compose service bind-mounts this repo at `/workspace`, so paths passed to
+the CLI are relative to the repository root.
+
+Host port `8013` is reserved in `docker-compose.yml` for the future app/API
+service. It maps to container port `8000`.
 
 ## Basic Usage
 
@@ -56,18 +77,12 @@ simple-tps run examples/scripts/inspect_project.py --project examples/demo-proje
 The project manifest is `project.json` inside each project folder. Image, dose,
 ROI, plan, and DICOM files are stored as ordinary files under that folder.
 
-## Docker
+## Docker Usage
 
-Build and run the CLI in Docker:
+Run the same CLI commands through Docker:
 
 ```bash
 docker compose run --rm cli --help
 docker compose run --rm cli inspect examples/demo-project
 docker compose run --rm cli init cases/case-001
 ```
-
-The Compose service bind-mounts this repo at `/workspace`, so paths are relative
-to the repository root.
-
-Host port `8013` is reserved in `docker-compose.yml` for the future app/API
-service. It maps to container port `8000`.
