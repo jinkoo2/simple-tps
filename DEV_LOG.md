@@ -26,6 +26,8 @@
   `patients/eclipse-001` from the stereophan 7-beam sample.
 - Updated the Eclipse DICOM import example to generate `images/ct.mha` with
   SimpleITK by default.
+- Expanded the Eclipse DICOM import example to generate compressed MHA RTDOSE
+  images, compressed MHA contour masks, and `plans/plan.json` from RTPLAN.
 
 ## Open Implementation Notes
 

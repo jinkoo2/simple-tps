@@ -101,7 +101,8 @@ stps inspect patients/eclipse-001
 
 The sample folder name on disk is `stereophan_IMRT_7beams`. This example copies
 CT, RTPLAN, RTDOSE, and RTSTRUCT files into `patients/eclipse-001/dicom/original`,
-writes the CT image to `patients/eclipse-001/images/ct.mha`, and updates
+writes compressed MHA working files for the CT, dose, and contour masks, creates
+`patients/eclipse-001/plans/plan.json`, and updates
 `patients/eclipse-001/project.json`.
 
 Run a trusted Python automation script:
