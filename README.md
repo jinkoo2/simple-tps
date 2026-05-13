@@ -19,7 +19,10 @@ Verify the install:
 
 ```bash
 simple-tps --help
+stps --help
 ```
+
+Both commands are installed by the project and run the same CLI.
 
 ### Option 2: With Docker
 
@@ -48,6 +51,12 @@ Create a project folder:
 
 ```bash
 simple-tps init cases/case-001 --patient-id case-001 --patient-name "Demo Patient"
+```
+
+You can use `stps` anywhere `simple-tps` is shown:
+
+```bash
+stps inspect examples/demo-project
 ```
 
 Inspect the project:

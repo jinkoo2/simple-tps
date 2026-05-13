@@ -21,6 +21,7 @@ dev = [
 
 [project.scripts]
 simple-tps = "simple_tps.cli:main"
+stps = "simple_tps.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

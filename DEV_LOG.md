@@ -20,6 +20,7 @@
 - Standardized project terminology on contour/contours in docs, schema, core
   library, examples, and tests.
 - Added initial `simple-tps contour add` CLI command.
+- Added `stps` as a short console-script alias for `simple-tps`.
 
 ## Open Implementation Notes
 
