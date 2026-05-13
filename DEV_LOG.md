@@ -16,6 +16,7 @@
   - `init`, `validate`, `inspect`, and `run` commands.
   - Demo project manifest under `examples/demo-project`.
 - Added Docker support for running the current CLI scaffold in a container.
+- Reserved host port `8013` in Docker Compose for the future app/API service.
 
 ## Open Implementation Notes
 

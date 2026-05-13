@@ -5,5 +5,7 @@ services:
       dockerfile: Dockerfile
     image: simple-tps:latest
     working_dir: /workspace
+    ports:
+      - "8013:8000"
     volumes:
       - .:/workspace

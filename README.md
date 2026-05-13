@@ -26,3 +26,6 @@ docker compose run --rm cli init cases/case-001
 
 The Compose service bind-mounts this repo at `/workspace`, so paths are relative
 to the repository root.
+
+Host port `8013` is reserved in `docker-compose.yml` for the future app/API
+service. It maps to container port `8000`.
