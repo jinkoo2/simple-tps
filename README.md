@@ -50,7 +50,7 @@ service. It maps to container port `8000`.
 Create a project folder:
 
 ```bash
-simple-tps init cases/case-001 --patient-id case-001 --patient-name "Demo Patient"
+simple-tps init patients/patient-001 --patient-id patient-001 --patient-name "Demo Patient"
 ```
 
 You can use `stps` anywhere `simple-tps` is shown:
@@ -62,25 +62,25 @@ stps inspect examples/demo-project
 Inspect the project:
 
 ```bash
-simple-tps inspect cases/case-001
+simple-tps inspect patients/patient-001
 ```
 
 Validate only the manifest:
 
 ```bash
-simple-tps validate cases/case-001 --skip-files
+simple-tps validate patients/patient-001 --skip-files
 ```
 
 Validate the manifest and referenced files:
 
 ```bash
-simple-tps validate cases/case-001
+simple-tps validate patients/patient-001
 ```
 
 Add a contour mask to the manifest:
 
 ```bash
-simple-tps contour add cases/case-001 --name PTV --mask contours/PTV.mha --color "#e15759"
+simple-tps contour add patients/patient-001 --name PTV --mask contours/PTV.mha --color "#e15759"
 ```
 
 Run a trusted Python automation script:
@@ -100,5 +100,5 @@ Run the same CLI commands through Docker:
 ```bash
 docker compose run --rm cli --help
 docker compose run --rm cli inspect examples/demo-project
-docker compose run --rm cli init cases/case-001
+docker compose run --rm cli init patients/patient-001
 ```

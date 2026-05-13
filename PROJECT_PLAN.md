@@ -89,14 +89,14 @@ The core library should own:
 The CLI should be a thin wrapper around the same core library, for example:
 
 ```bash
-simple-tps init ./case-001
-simple-tps import dicom ./case-001 ./dicom-folder
-simple-tps import mha ./case-001 --ct ct.mha
-simple-tps contour add ./case-001 --name PTV --mask contours/PTV.mha --color "#e15759"
-simple-tps dose add ./case-001 dose.mha --units Gy
-simple-tps plan import ./case-001 plan.json
-simple-tps validate ./case-001
-simple-tps dvh ./case-001 --dose dose_primary --contour PTV
+simple-tps init ./patient-001
+simple-tps import dicom ./patient-001 ./dicom-folder
+simple-tps import mha ./patient-001 --ct ct.mha
+simple-tps contour add ./patient-001 --name PTV --mask contours/PTV.mha --color "#e15759"
+simple-tps dose add ./patient-001 dose.mha --units Gy
+simple-tps plan import ./patient-001 plan.json
+simple-tps validate ./patient-001
+simple-tps dvh ./patient-001 --dose dose_primary --contour PTV
 ```
 
 Python scripting should expose a stable package API, for example:
@@ -104,7 +104,7 @@ Python scripting should expose a stable package API, for example:
 ```python
 from simple_tps import Project
 
-p = Project.open("./case-001")
+p = Project.open("./patient-001")
 dose = p.dose("dose_primary")
 ptv = p.contour("PTV")
 
@@ -115,7 +115,7 @@ p.save()
 Then run scripts through the CLI:
 
 ```bash
-simple-tps run scripts/check_plan.py --project ./case-001
+simple-tps run scripts/check_plan.py --project ./patient-001
 ```
 
 Important safety note: user Python scripts are trusted local code execution.
@@ -128,10 +128,10 @@ disabled by default.
 
 ### Recommended First Version: Portable Project Folder
 
-Each case is a folder:
+Each patient is a folder:
 
 ```text
-case-name/
+patient-name/
   project.json
   images/
     ct.mha
@@ -164,7 +164,7 @@ Limitations:
 
 ### `project.json`
 
-Store case-level metadata and references:
+Store patient-level metadata and references:
 
 ```json
 {
@@ -201,7 +201,7 @@ Store case-level metadata and references:
 
 ### Later Storage Options
 
-Add SQLite when there are many local cases and you need search/indexing:
+Add SQLite when there are many local patients and you need search/indexing:
 
 - One app-level SQLite database indexing project folders.
 - Keep image data in `.mha` files, not inside SQLite.
@@ -364,7 +364,7 @@ Recommended initial choice:
 - Expose `simple_tps.Project` Python API.
 - Add `simple-tps run SCRIPT --project PROJECT_DIR`.
 - Provide script examples for:
-  - Printing case metadata.
+  - Printing patient metadata.
   - Adding a contour mask.
   - Computing contour dose statistics.
   - Exporting a simple report.

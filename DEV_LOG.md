@@ -21,6 +21,7 @@
   library, examples, and tests.
 - Added initial `simple-tps contour add` CLI command.
 - Added `stps` as a short console-script alias for `simple-tps`.
+- Updated user-facing examples to patient/patients.
 
 ## Open Implementation Notes
 
