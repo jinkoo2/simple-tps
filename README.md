@@ -5,14 +5,56 @@ NiiVue for visualization and `.mha` files for working image data.
 
 Start with [PROJECT_PLAN.md](PROJECT_PLAN.md).
 
-## Early CLI Sketch
+## Local Setup
+
+Using the existing conda environment:
 
 ```bash
-simple-tps init ./case-001
-simple-tps validate ./case-001
-simple-tps inspect ./case-001
-simple-tps run examples/scripts/inspect_project.py --project ./case-001
+conda activate simple-tps
+cd /home/jk/projects/tps/simple-tps
+python -m pip install -e .
 ```
+
+Check the CLI:
+
+```bash
+simple-tps --help
+```
+
+## Basic Usage
+
+Create a project folder:
+
+```bash
+simple-tps init cases/case-001 --patient-id case-001 --patient-name "Demo Patient"
+```
+
+Inspect the project:
+
+```bash
+simple-tps inspect cases/case-001
+```
+
+Validate only the manifest:
+
+```bash
+simple-tps validate cases/case-001 --skip-files
+```
+
+Validate the manifest and referenced files:
+
+```bash
+simple-tps validate cases/case-001
+```
+
+Run a trusted Python automation script:
+
+```bash
+simple-tps run examples/scripts/inspect_project.py --project examples/demo-project
+```
+
+The project manifest is `project.json` inside each project folder. Image, dose,
+ROI, plan, and DICOM files are stored as ordinary files under that folder.
 
 ## Docker
 
