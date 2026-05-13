@@ -13,3 +13,16 @@ simple-tps validate ./case-001
 simple-tps inspect ./case-001
 simple-tps run examples/scripts/inspect_project.py --project ./case-001
 ```
+
+## Docker
+
+Build and run the CLI in Docker:
+
+```bash
+docker compose run --rm cli --help
+docker compose run --rm cli inspect examples/demo-project
+docker compose run --rm cli init cases/case-001
+```
+
+The Compose service bind-mounts this repo at `/workspace`, so paths are relative
+to the repository root.

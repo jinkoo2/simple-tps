@@ -1,0 +1,9 @@
+services:
+  cli:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: simple-tps:latest
+    working_dir: /workspace
+    volumes:
+      - .:/workspace

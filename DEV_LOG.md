@@ -15,6 +15,7 @@
   - Project manifest read/write/validation.
   - `init`, `validate`, `inspect`, and `run` commands.
   - Demo project manifest under `examples/demo-project`.
+- Added Docker support for running the current CLI scaffold in a container.
 
 ## Open Implementation Notes
 
