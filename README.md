@@ -83,6 +83,21 @@ Add a contour mask to the manifest:
 simple-tps contour add patients/patient-001 --name PTV --mask contours/PTV.mha --color "#e15759"
 ```
 
+Import the Eclipse stereophan 7-beam DICOM sample as original DICOM references:
+
+```bash
+python examples/scripts/import_eclipse_dicom_patient.py \
+  --source /home/jk/projects/tps/_sample_plans/eclipse_tps/stereophan_IMRT_7beams \
+  --project patients/eclipse-001
+
+stps inspect patients/eclipse-001
+```
+
+The sample folder name on disk is `stereophan_IMRT_7beams`. This example copies
+CT, RTPLAN, RTDOSE, and RTSTRUCT files into `patients/eclipse-001/dicom/original`
+and updates `patients/eclipse-001/project.json`. It does not convert DICOM to
+MHA yet.
+
 Run a trusted Python automation script:
 
 ```bash

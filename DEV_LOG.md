@@ -22,6 +22,8 @@
 - Added initial `simple-tps contour add` CLI command.
 - Added `stps` as a short console-script alias for `simple-tps`.
 - Updated user-facing examples to patient/patients.
+- Added an Eclipse DICOM reference-import example for creating
+  `patients/eclipse-001` from the stereophan 7-beam sample.
 
 ## Open Implementation Notes
 
