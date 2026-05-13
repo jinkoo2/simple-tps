@@ -24,6 +24,8 @@
 - Updated user-facing examples to patient/patients.
 - Added an Eclipse DICOM reference-import example for creating
   `patients/eclipse-001` from the stereophan 7-beam sample.
+- Updated the Eclipse DICOM import example to generate `images/ct.mha` with
+  SimpleITK by default.
 
 ## Open Implementation Notes
 

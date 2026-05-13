@@ -24,6 +24,12 @@ stps --help
 
 Both commands are installed by the project and run the same CLI.
 
+For DICOM import and CT conversion examples, install the imaging dependency:
+
+```bash
+python -m pip install -e ".[dicom]"
+```
+
 ### Option 2: With Docker
 
 Build the image:
@@ -94,9 +100,9 @@ stps inspect patients/eclipse-001
 ```
 
 The sample folder name on disk is `stereophan_IMRT_7beams`. This example copies
-CT, RTPLAN, RTDOSE, and RTSTRUCT files into `patients/eclipse-001/dicom/original`
-and updates `patients/eclipse-001/project.json`. It does not convert DICOM to
-MHA yet.
+CT, RTPLAN, RTDOSE, and RTSTRUCT files into `patients/eclipse-001/dicom/original`,
+writes the CT image to `patients/eclipse-001/images/ct.mha`, and updates
+`patients/eclipse-001/project.json`.
 
 Run a trusted Python automation script:
 
