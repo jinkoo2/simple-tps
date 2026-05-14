@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-LABEL description="Simple TPS core library and CLI"
+LABEL description="Simple TPS core library, CLI, and web viewer"
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -17,4 +17,4 @@ RUN python -m pip install --upgrade pip setuptools wheel \
 WORKDIR /workspace
 
 ENTRYPOINT ["simple-tps"]
-CMD ["--help"]
+CMD ["web", "--host", "0.0.0.0", "--port", "8000", "--patients-root", "patients"]

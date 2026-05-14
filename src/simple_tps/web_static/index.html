@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Simple TPS Viewer</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <header class="brand">
+          <h1>Simple TPS</h1>
+          <span id="server-status">Starting</span>
+        </header>
+
+        <section class="panel">
+          <label for="patient-select">Patient</label>
+          <select id="patient-select"></select>
+        </section>
+
+        <section class="panel">
+          <h2>Plan</h2>
+          <dl id="plan-summary" class="summary"></dl>
+        </section>
+
+        <section class="panel">
+          <h2>Objects</h2>
+          <div id="object-list" class="object-list"></div>
+        </section>
+      </aside>
+
+      <main class="viewer">
+        <div class="toolbar">
+          <button id="reload-button" type="button">Reload</button>
+          <span id="load-status">No patient loaded</span>
+        </div>
+        <canvas id="niivue-canvas"></canvas>
+      </main>
+    </div>
+
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>

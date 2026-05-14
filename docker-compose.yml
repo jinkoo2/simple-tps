@@ -1,5 +1,5 @@
 services:
-  cli:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
@@ -7,5 +7,13 @@ services:
     working_dir: /workspace
     ports:
       - "8013:8000"
+    volumes:
+      - .:/workspace
+  cli:
+    image: simple-tps:latest
+    profiles: ["tools"]
+    working_dir: /workspace
+    entrypoint: ["simple-tps"]
+    command: ["--help"]
     volumes:
       - .:/workspace

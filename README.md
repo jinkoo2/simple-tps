@@ -117,6 +117,16 @@ Run a trusted Python automation script:
 simple-tps run examples/scripts/inspect_project.py --project examples/demo-project
 ```
 
+Start the web viewer:
+
+```bash
+stps web --port 8013 --patients-root patients --patient eclipse-001
+```
+
+Open `http://127.0.0.1:8013` in a browser. The viewer lists patient projects
+under `patients/`, loads `project.json`, and sends CT, dose, and contour MHA
+objects to NiiVue in the browser.
+
 The project manifest is `project.json` inside each project folder. Image, dose,
 contour mask, plan, and DICOM files are stored as ordinary files under that
 folder.
@@ -129,4 +139,10 @@ Run the same CLI commands through Docker:
 docker compose run --rm cli --help
 docker compose run --rm cli inspect examples/demo-project
 docker compose run --rm cli init patients/patient-001
+```
+
+Run the web viewer through Docker:
+
+```bash
+docker compose up app
 ```

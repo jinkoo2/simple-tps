@@ -56,6 +56,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--project", required=True, help="project folder passed to the script")
     p_run.set_defaults(func=cmd_run)
 
+    p_web = sub.add_parser("web", help="start the Simple TPS web viewer")
+    p_web.add_argument("--host", default="127.0.0.1")
+    p_web.add_argument("--port", type=int, default=8013)
+    p_web.add_argument("--patients-root", default="patients")
+    p_web.add_argument("--patient", default=None, help="patient folder name to open first")
+    p_web.set_defaults(func=cmd_web)
+
     return parser
 
 
@@ -95,6 +102,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         "project": project,
     }
     runpy.run_path(str(script), init_globals=globals_for_script)
+    return 0
+
+
+def cmd_web(args: argparse.Namespace) -> int:
+    from .web import run_server
+
+    run_server(args.host, args.port, args.patients_root, default_patient=args.patient)
     return 0
 
 

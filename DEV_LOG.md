@@ -32,6 +32,9 @@
   and plan objects, plus UID-based duplicate detection for import skipping.
 - Updated DICOM import defaults to derive patient ID, patient name, and default
   patient folder from source DICOM metadata when not provided.
+- Added an initial web viewer served by `simple-tps web` / `stps web`, using
+  NiiVue in the browser to render CT, dose, and contour MHA objects from patient
+  project folders.
 
 ## Open Implementation Notes
 

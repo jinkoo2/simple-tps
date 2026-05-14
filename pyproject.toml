@@ -30,3 +30,6 @@ stps = "simple_tps.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+simple_tps = ["web_static/*"]
