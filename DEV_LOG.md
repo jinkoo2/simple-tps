@@ -35,6 +35,9 @@
 - Added an initial web viewer served by `simple-tps web` / `stps web`, using
   NiiVue in the browser to render CT, dose, and contour MHA objects from patient
   project folders.
+- Added initial web security controls: optional HTTP Basic authentication,
+  localhost-only Docker port publishing, safe file path resolution, and browser
+  security headers.
 
 ## Open Implementation Notes
 

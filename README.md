@@ -127,6 +127,18 @@ Open `http://127.0.0.1:8013` in a browser. The viewer lists patient projects
 under `patients/`, loads `project.json`, and sends CT, dose, and contour MHA
 objects to NiiVue in the browser.
 
+Start the viewer with HTTP Basic authentication:
+
+```bash
+stps web --port 8013 --patients-root patients --patient eclipse-001 \
+  --auth-user tps --auth-password "change-this-password"
+```
+
+You can also set `SIMPLE_TPS_AUTH_USER` and `SIMPLE_TPS_AUTH_PASSWORD` instead
+of passing credentials on the command line. Keep the default `--host 127.0.0.1`
+for local-only access. If you need access from another machine, put the app
+behind a TLS reverse proxy and set explicit credentials.
+
 The project manifest is `project.json` inside each project folder. Image, dose,
 contour mask, plan, and DICOM files are stored as ordinary files under that
 folder.
@@ -145,4 +157,11 @@ Run the web viewer through Docker:
 
 ```bash
 docker compose up app
+```
+
+Docker Compose publishes the viewer on `127.0.0.1:8013` by default. To enable
+authentication for Docker:
+
+```bash
+SIMPLE_TPS_AUTH_USER=tps SIMPLE_TPS_AUTH_PASSWORD=change-this-password docker compose up app
 ```

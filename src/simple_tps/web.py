@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
+from base64 import b64decode
+from hmac import compare_digest
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
@@ -21,10 +24,14 @@ class ViewerServer(ThreadingHTTPServer):
         handler_class: type[SimpleHTTPRequestHandler],
         patients_root: Path,
         default_patient: str | None = None,
+        auth_user: str | None = None,
+        auth_password: str | None = None,
     ) -> None:
         super().__init__(server_address, handler_class)
         self.patients_root = patients_root.resolve()
         self.default_patient = default_patient
+        self.auth_user = auth_user
+        self.auth_password = auth_password
         static_root = resources.files("simple_tps").joinpath("web_static")
         self.static_root = Path(str(static_root))
 
@@ -36,6 +43,10 @@ class ViewerHandler(SimpleHTTPRequestHandler):
         print(f"{self.address_string()} - {format % args}")
 
     def do_GET(self) -> None:
+        if not self.is_authorized():
+            self.require_auth()
+            return
+
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
 
@@ -64,6 +75,36 @@ class ViewerHandler(SimpleHTTPRequestHandler):
             return
 
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+
+    def end_headers(self) -> None:
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "same-origin")
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        super().end_headers()
+
+    def is_authorized(self) -> bool:
+        if not self.server.auth_user or not self.server.auth_password:
+            return True
+
+        header = self.headers.get("Authorization", "")
+        if not header.startswith("Basic "):
+            return False
+        try:
+            decoded = b64decode(header.removeprefix("Basic "), validate=True).decode("utf-8")
+        except Exception:
+            return False
+        user, separator, password = decoded.partition(":")
+        if not separator:
+            return False
+        return compare_digest(user, self.server.auth_user) and compare_digest(password, self.server.auth_password)
+
+    def require_auth(self) -> None:
+        self.send_response(HTTPStatus.UNAUTHORIZED)
+        self.send_header("WWW-Authenticate", 'Basic realm="Simple TPS"')
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b"Authentication required\n")
 
     def serve_static(self, relative_path: str) -> None:
         path = safe_join(self.server.static_root, relative_path)
@@ -156,12 +197,32 @@ class ViewerHandler(SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
 
-def run_server(host: str, port: int, patients_root: str | Path, default_patient: str | None = None) -> None:
-    server = ViewerServer((host, port), ViewerHandler, Path(patients_root), default_patient=default_patient)
+def run_server(
+    host: str,
+    port: int,
+    patients_root: str | Path,
+    default_patient: str | None = None,
+    auth_user: str | None = None,
+    auth_password: str | None = None,
+) -> None:
+    auth_user = auth_user or os.environ.get("SIMPLE_TPS_AUTH_USER")
+    auth_password = auth_password or os.environ.get("SIMPLE_TPS_AUTH_PASSWORD")
+    server = ViewerServer(
+        (host, port),
+        ViewerHandler,
+        Path(patients_root),
+        default_patient=default_patient,
+        auth_user=auth_user,
+        auth_password=auth_password,
+    )
     print(f"Simple TPS viewer: http://{host}:{port}")
     print(f"Patients root    : {server.patients_root}")
     if default_patient:
         print(f"Default patient  : {default_patient}")
+    if auth_user and auth_password:
+        print(f"Authentication   : enabled for user {auth_user!r}")
+    else:
+        print("Authentication   : disabled; bind to 127.0.0.1 for local-only use")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

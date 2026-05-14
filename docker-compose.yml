@@ -6,7 +6,10 @@ services:
     image: simple-tps:latest
     working_dir: /workspace
     ports:
-      - "8013:8000"
+      - "127.0.0.1:8013:8000"
+    environment:
+      SIMPLE_TPS_AUTH_USER: ${SIMPLE_TPS_AUTH_USER:-}
+      SIMPLE_TPS_AUTH_PASSWORD: ${SIMPLE_TPS_AUTH_PASSWORD:-}
     volumes:
       - .:/workspace
   cli:

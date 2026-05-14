@@ -61,6 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_web.add_argument("--port", type=int, default=8013)
     p_web.add_argument("--patients-root", default="patients")
     p_web.add_argument("--patient", default=None, help="patient folder name to open first")
+    p_web.add_argument("--auth-user", default=None, help="enable HTTP Basic auth with this username")
+    p_web.add_argument("--auth-password", default=None, help="enable HTTP Basic auth with this password")
     p_web.set_defaults(func=cmd_web)
 
     return parser
@@ -108,7 +110,14 @@ def cmd_run(args: argparse.Namespace) -> int:
 def cmd_web(args: argparse.Namespace) -> int:
     from .web import run_server
 
-    run_server(args.host, args.port, args.patients_root, default_patient=args.patient)
+    run_server(
+        args.host,
+        args.port,
+        args.patients_root,
+        default_patient=args.patient,
+        auth_user=args.auth_user,
+        auth_password=args.auth_password,
+    )
     return 0
 
 
