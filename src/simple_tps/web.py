@@ -205,6 +205,7 @@ def run_server(
     auth_user: str | None = None,
     auth_password: str | None = None,
 ) -> None:
+    load_dotenv()
     auth_user = auth_user or os.environ.get("SIMPLE_TPS_AUTH_USER")
     auth_password = auth_password or os.environ.get("SIMPLE_TPS_AUTH_PASSWORD")
     server = ViewerServer(
@@ -268,3 +269,32 @@ def safe_join(root: Path, relative_path: str) -> Path | None:
     except ValueError:
         return None
     return candidate
+
+
+def load_dotenv(path: str | Path = ".env") -> None:
+    env_path = Path(path)
+    if not env_path.is_file():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        parsed = parse_env_line(line)
+        if not parsed:
+            continue
+        key, value = parsed
+        os.environ.setdefault(key, value)
+
+
+def parse_env_line(line: str) -> tuple[str, str] | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        return None
+    key, value = stripped.split("=", 1)
+    key = key.strip()
+    if not key:
+        return None
+    return key, unquote_env_value(value.strip())
+
+
+def unquote_env_value(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value

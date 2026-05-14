@@ -38,6 +38,8 @@
 - Added initial web security controls: optional HTTP Basic authentication,
   localhost-only Docker port publishing, safe file path resolution, and browser
   security headers.
+- Added `.env` support for local web authentication variables and documented
+  `.env.example`.
 
 ## Open Implementation Notes
 

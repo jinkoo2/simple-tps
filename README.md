@@ -134,10 +134,18 @@ stps web --port 8013 --patients-root patients --patient eclipse-001 \
   --auth-user tps --auth-password "change-this-password"
 ```
 
-You can also set `SIMPLE_TPS_AUTH_USER` and `SIMPLE_TPS_AUTH_PASSWORD` instead
-of passing credentials on the command line. Keep the default `--host 127.0.0.1`
-for local-only access. If you need access from another machine, put the app
-behind a TLS reverse proxy and set explicit credentials.
+You can also set `SIMPLE_TPS_AUTH_USER` and `SIMPLE_TPS_AUTH_PASSWORD` in a
+local `.env` file instead of passing credentials on the command line:
+
+```bash
+cp .env.example .env
+# edit .env and set a real password
+stps web --port 8013 --patients-root patients --patient eclipse-001
+```
+
+Keep the default `--host 127.0.0.1` for local-only access. If you need access
+from another machine, put the app behind a TLS reverse proxy and set explicit
+credentials.
 
 The project manifest is `project.json` inside each project folder. Image, dose,
 contour mask, plan, and DICOM files are stored as ordinary files under that
@@ -159,9 +167,11 @@ Run the web viewer through Docker:
 docker compose up app
 ```
 
-Docker Compose publishes the viewer on `127.0.0.1:8013` by default. To enable
-authentication for Docker:
+Docker Compose reads the same `.env` file and publishes the viewer on
+`127.0.0.1:8013` by default:
 
 ```bash
-SIMPLE_TPS_AUTH_USER=tps SIMPLE_TPS_AUTH_PASSWORD=change-this-password docker compose up app
+cp .env.example .env
+# edit .env and set a real password
+docker compose up app
 ```
