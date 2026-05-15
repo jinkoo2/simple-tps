@@ -1,0 +1,910 @@
+import React, { useMemo } from "react";
+import { createRoot } from "react-dom/client";
+import { SimpleTreeView } from "@mui/x-tree-view/SimpleTreeView";
+import { TreeItem } from "@mui/x-tree-view/TreeItem";
+import { Niivue } from "https://unpkg.com/@niivue/niivue@0.57.0/dist/index.js";
+
+const h = React.createElement;
+
+const state = {
+  config: null,
+  patients: [],
+  project: null,
+  selectedImageId: null,
+  loadedImageId: null,
+  selectedPlanId: null,
+  selected: {
+    dose: new Set(),
+    contour: new Set(),
+  },
+  planDetails: new Map(),
+  overlayVolumes: {
+    dose: new Map(),
+    contour: new Map(),
+  },
+  nodeRegistry: new Map(),
+  ui: {
+    menuOpen: false,
+    patientDialogOpen: false,
+    patientSearch: "",
+    selectedNodeId: null,
+    propertyOpen: true,
+  },
+  nv: null,
+};
+
+const el = {
+  sidebarRoot: document.getElementById("sidebar-root"),
+  propertyRoot: document.getElementById("property-root"),
+  loadStatus: document.getElementById("load-status"),
+  reloadButton: document.getElementById("reload-button"),
+  propertyToggle: document.getElementById("property-toggle"),
+};
+
+let sidebarRoot = null;
+let propertyRoot = null;
+
+async function main() {
+  sidebarRoot = createRoot(el.sidebarRoot);
+  propertyRoot = createRoot(el.propertyRoot);
+
+  state.nv = new Niivue({
+    backColor: [0.02, 0.025, 0.03, 1],
+    crosshairColor: [0.1, 0.85, 0.72, 1],
+    textHeight: 0.035,
+  });
+  await state.nv.attachTo("niivue-canvas");
+
+  el.reloadButton.addEventListener("click", () => reloadCurrentPatient());
+  el.propertyToggle.addEventListener("click", () => {
+    state.ui.propertyOpen = !state.ui.propertyOpen;
+    renderApp();
+  });
+
+  state.config = await fetchJson("/api/config");
+  await loadPatients();
+  clearPatientState("Select a patient");
+  renderApp();
+}
+
+async function loadPatients() {
+  const payload = await fetchJson("/api/patients");
+  state.patients = payload.patients;
+}
+
+async function reloadCurrentPatient() {
+  const patientKey = state.project?.key;
+  await loadPatients();
+  if (patientKey) {
+    await openPatient(patientKey);
+  } else {
+    renderApp();
+  }
+}
+
+async function openPatient(patientKey) {
+  clearPatientState("Loading patient");
+  renderApp();
+
+  state.project = await fetchJson(`/api/patients/${encodeURIComponent(patientKey)}/project`);
+  initializeObjectSelection();
+  state.ui.patientDialogOpen = false;
+  state.ui.menuOpen = false;
+  state.ui.patientSearch = "";
+  state.ui.selectedNodeId = patientNodeId();
+  el.loadStatus.textContent = "Patient loaded";
+  renderApp();
+}
+
+function clearPatientState(statusText) {
+  state.project = null;
+  state.selectedImageId = null;
+  state.loadedImageId = null;
+  state.selectedPlanId = null;
+  state.selected.dose = new Set();
+  state.selected.contour = new Set();
+  state.planDetails = new Map();
+  state.overlayVolumes.dose = new Map();
+  state.overlayVolumes.contour = new Map();
+  state.nodeRegistry = new Map();
+  el.loadStatus.textContent = statusText;
+  clearViewerVolumes();
+}
+
+function clearViewerVolumes() {
+  if (!state.nv) {
+    return;
+  }
+  state.nv.volumes = [];
+  state.nv.overlays = [];
+  state.nv.meshes = [];
+  state.nv.drawScene();
+}
+
+function initializeObjectSelection() {
+  state.selectedImageId = null;
+  state.loadedImageId = null;
+  state.selectedPlanId = null;
+  state.selected.dose = new Set();
+  state.selected.contour = new Set();
+}
+
+async function selectImage(imageId) {
+  state.selectedImageId = imageId || null;
+  state.selected.dose = new Set();
+  state.selected.contour = new Set();
+  state.overlayVolumes.dose = new Map();
+  state.overlayVolumes.contour = new Map();
+  renderApp();
+
+  if (!state.selectedImageId) {
+    state.loadedImageId = null;
+    clearViewerVolumes();
+    el.loadStatus.textContent = "Select an image";
+    renderApp();
+    return;
+  }
+  await loadBaseImage(selectedImage());
+  renderApp();
+}
+
+async function loadBaseImage(image) {
+  state.loadedImageId = null;
+  if (!image?.url) {
+    clearViewerVolumes();
+    el.loadStatus.textContent = "No loadable image volume";
+    return;
+  }
+  clearViewerVolumes();
+  try {
+    await state.nv.loadVolumes([volumeDescriptor(image, "Image", "gray", 1)]);
+    state.nv.setSliceType(state.nv.sliceTypeMultiplanar);
+    state.loadedImageId = imageKey(image);
+    el.loadStatus.textContent = "Image loaded";
+  } catch (error) {
+    console.error(error);
+    el.loadStatus.textContent = `Load failed: ${error.message || error}`;
+  }
+}
+
+async function selectPlan(planId) {
+  state.selectedPlanId = planId || null;
+  state.selected.dose = new Set(selectedPlanDoses().map(({ index }) => index));
+  updateAllDoseVisibility();
+  renderApp();
+  if (state.selectedPlanId) {
+    await loadSelectedPlanObjects();
+  }
+  updateAllDoseVisibility();
+  renderApp();
+}
+
+async function loadSelectedPlanObjects() {
+  const plan = selectedPlan();
+  if (!plan) {
+    return;
+  }
+  el.loadStatus.textContent = "Loading plan";
+  await loadPlanDetails(plan);
+  const planImage = imageForPlan(plan);
+  if (planImage && imageKey(planImage) !== state.loadedImageId) {
+    state.selectedImageId = imageKey(planImage);
+    state.overlayVolumes.dose = new Map();
+    state.overlayVolumes.contour = new Map();
+    await loadBaseImage(planImage);
+  }
+  if (!state.loadedImageId) {
+    el.loadStatus.textContent = "Select an image before loading plan objects";
+    return;
+  }
+  await Promise.all(selectedPlanDoses().map(({ dose, index }) => ensureOverlayVolume("dose", index, dose, true)));
+  el.loadStatus.textContent = "Plan loaded";
+}
+
+async function loadPlanDetails(plan) {
+  if (!plan.url || state.planDetails.has(plan.id)) {
+    return state.planDetails.get(plan.id) || null;
+  }
+  const detail = await fetchJson(plan.url);
+  state.planDetails.set(plan.id, detail);
+  renderApp();
+  return detail;
+}
+
+async function ensureOverlayVolume(kind, index, item, visible) {
+  const overlay = state.overlayVolumes[kind].get(index);
+  if (overlay?.volume) {
+    setOverlayOpacity(overlay, visible);
+    return overlay.volume;
+  }
+  if (!visible) {
+    return null;
+  }
+  if (overlay?.loading) {
+    const volume = await overlay.loading;
+    setOverlayOpacity(state.overlayVolumes[kind].get(index), visible);
+    return volume;
+  }
+  if (!item?.url) {
+    return null;
+  }
+
+  const descriptor = overlayDescriptor(kind, index, item, visible);
+  const pending = state.nv.addVolumeFromUrl(descriptor);
+  state.overlayVolumes[kind].set(index, {
+    opacity: descriptor.opacity || overlayOpacity(kind),
+    loading: pending,
+  });
+  try {
+    const volume = await pending;
+    state.overlayVolumes[kind].set(index, {
+      volume,
+      opacity: descriptor.opacity || overlayOpacity(kind),
+    });
+    return volume;
+  } catch (error) {
+    state.overlayVolumes[kind].delete(index);
+    throw error;
+  }
+}
+
+async function setContourVisible(index, visible) {
+  if (visible) {
+    state.selected.contour.add(index);
+  } else {
+    state.selected.contour.delete(index);
+  }
+  try {
+    await ensureOverlayVolume("contour", index, state.project.contours[index], visible);
+  } catch (error) {
+    console.error(error);
+    el.loadStatus.textContent = `Load failed: ${error.message || error}`;
+  }
+  renderApp();
+}
+
+async function setDoseVisible(index, visible) {
+  if (visible) {
+    state.selected.dose.add(index);
+  } else {
+    state.selected.dose.delete(index);
+  }
+  try {
+    await ensureOverlayVolume("dose", index, state.project.doses[index], visible);
+  } catch (error) {
+    console.error(error);
+    el.loadStatus.textContent = `Load failed: ${error.message || error}`;
+  }
+  renderApp();
+}
+
+function updateAllDoseVisibility() {
+  for (const [index, overlay] of state.overlayVolumes.dose.entries()) {
+    setOverlayOpacity(overlay, state.selected.dose.has(index));
+  }
+}
+
+function setOverlayOpacity(overlay, visible) {
+  if (!overlay?.volume) {
+    return;
+  }
+  const volumeIndex = state.nv.getVolumeIndexByID(overlay.volume.id);
+  if (volumeIndex >= 0) {
+    state.nv.setOpacity(volumeIndex, visible ? overlay.opacity : 0);
+  }
+}
+
+function overlayDescriptor(kind, index, item, visible) {
+  if (kind === "contour") {
+    const color = contourColor(item);
+    const colormap = contourColormap(index, color);
+    return volumeDescriptor(item, "Contour", colormap, visible ? overlayOpacity(kind) : 0);
+  }
+  return volumeDescriptor(item, "Dose", "hot", visible ? overlayOpacity(kind) : 0);
+}
+
+function overlayOpacity(kind) {
+  return kind === "contour" ? 0.46 : 0.36;
+}
+
+function volumeDescriptor(item, fallbackName, colormap, opacity) {
+  return {
+    url: item.url,
+    name: volumeFileName(item, fallbackName),
+    colormap,
+    opacity,
+    visible: true,
+  };
+}
+
+function volumeFileName(item, fallbackName) {
+  const source = item.path || item.name || item.id || fallbackName;
+  const fileName = String(source).split("/").pop() || fallbackName;
+  return fileName.includes(".") ? fileName : `${fileName}.mha`;
+}
+
+function renderApp() {
+  if (!sidebarRoot || !propertyRoot) {
+    return;
+  }
+  sidebarRoot.render(h(SidebarApp));
+  propertyRoot.render(h(PropertyPane));
+  document.body.classList.toggle("property-hidden", !state.ui.propertyOpen);
+  el.propertyToggle.textContent = state.ui.propertyOpen ? "Hide Properties" : "Show Properties";
+}
+
+function SidebarApp() {
+  const tree = useMemo(() => buildTree(), [
+    state.project,
+    state.selectedImageId,
+    state.loadedImageId,
+    state.selectedPlanId,
+    state.selected.dose.size,
+    state.selected.contour.size,
+    state.planDetails.size,
+  ]);
+  const visibleItems = visibleTreeItems(tree);
+
+  return h(
+    React.Fragment,
+    null,
+    h(
+      "header",
+      { className: "brand" },
+      h(
+        "div",
+        { className: "brand-left" },
+        h(
+          "button",
+          {
+            type: "button",
+            className: "icon-button hamburger-button",
+            "aria-label": "Open menu",
+            onClick: () => {
+              state.ui.menuOpen = !state.ui.menuOpen;
+              renderApp();
+            },
+          },
+          h("span", { className: "hamburger-lines", "aria-hidden": "true" }),
+        ),
+        h("h1", null, "Simple TPS"),
+      ),
+      h("span", null, `${state.patients.length} patients`),
+      state.ui.menuOpen && h(AppMenu),
+    ),
+    h(
+      "section",
+      { className: "tree-panel" },
+      state.project
+        ? h(SimpleTreeView, {
+            checkboxSelection: true,
+            multiSelect: true,
+            selectedItems: visibleItems,
+            defaultExpandedItems: defaultExpandedItems(tree),
+            onSelectedItemsChange: (_event, itemIds) => handleTreeVisibilityChange(visibleItems, itemIds),
+            children: tree.map(renderTreeNode),
+          })
+        : h("div", { className: "empty-state" }, "Open a patient from the menu."),
+    ),
+    state.ui.patientDialogOpen && h(PatientSearchDialog),
+  );
+}
+
+function AppMenu() {
+  return h(
+    "div",
+    { className: "popup-menu" },
+    h(
+      "button",
+      {
+        type: "button",
+        className: "menu-item",
+        onClick: () => {
+          state.ui.menuOpen = false;
+          state.ui.patientDialogOpen = true;
+          renderApp();
+        },
+      },
+      h("span", null, "Patient"),
+      h("span", { className: "menu-arrow" }, "Open"),
+    ),
+  );
+}
+
+function PatientSearchDialog() {
+  const query = state.ui.patientSearch.trim().toLowerCase();
+  const filtered = state.patients.filter((patient) => patientLabel(patient).toLowerCase().includes(query));
+  return h(
+    "div",
+    { className: "dialog-backdrop" },
+    h(
+      "div",
+      { className: "dialog" },
+      h(
+        "header",
+        { className: "dialog-header" },
+        h("h2", null, "Open Patient"),
+        h(
+          "button",
+          {
+            type: "button",
+            className: "icon-button",
+            "aria-label": "Close",
+            onClick: () => {
+              state.ui.patientDialogOpen = false;
+              renderApp();
+            },
+          },
+          "x",
+        ),
+      ),
+      h("input", {
+        className: "search-input",
+        value: state.ui.patientSearch,
+        placeholder: "Search by patient ID or name",
+        autoFocus: true,
+        onInput: (event) => {
+          state.ui.patientSearch = event.currentTarget.value;
+          renderApp();
+        },
+      }),
+      h(
+        "div",
+        { className: "patient-results" },
+        filtered.map((patient) =>
+          h(
+            "button",
+            {
+              key: patient.key,
+              type: "button",
+              className: "patient-result",
+              onClick: () => openPatient(patient.key),
+            },
+            h("strong", null, patient.patient?.id || patient.key),
+            h("span", null, patient.patient?.name || "Unnamed patient"),
+          ),
+        ),
+        filtered.length === 0 && h("div", { className: "empty-state" }, "No matching patients"),
+      ),
+    ),
+  );
+}
+
+function PropertyPane() {
+  if (!state.ui.propertyOpen) {
+    return null;
+  }
+  const nodeItem = state.ui.selectedNodeId ? state.nodeRegistry.get(state.ui.selectedNodeId) : null;
+  const property = propertyForNode(nodeItem);
+  return h(
+    "div",
+    { className: "property-content" },
+    h(
+      "header",
+      { className: "property-header" },
+      h("h2", null, "Properties"),
+      h(
+        "button",
+        {
+          type: "button",
+          className: "icon-button",
+          "aria-label": "Hide properties",
+          onClick: () => {
+            state.ui.propertyOpen = false;
+            renderApp();
+          },
+        },
+        "x",
+      ),
+    ),
+    property
+      ? h(
+          React.Fragment,
+          null,
+          h("h3", null, property.title),
+          h(
+            "dl",
+            { className: "property-list" },
+            property.rows.map(([key, value]) => [
+              h("dt", { key: `${key}-dt` }, key),
+              h("dd", { key: `${key}-dd` }, formatValue(value)),
+            ]),
+          ),
+          property.json && h("pre", { className: "property-json" }, JSON.stringify(property.json, null, 2)),
+        )
+      : h("div", { className: "empty-state" }, "Select a tree node."),
+  );
+}
+
+function buildTree() {
+  state.nodeRegistry = new Map();
+  if (!state.project) {
+    return [];
+  }
+
+  const patient = node(patientNodeId(), patientDisplayLabel(), "patient", { data: state.project.manifest.patient });
+  const images = node("images", "Images", "category");
+  const plans = node("plans", "Plans", "category");
+
+  images.children = loadableImages().map((image) => {
+    const imageItem = node(imageNodeId(image), imageLabel(image), "image", { data: image });
+    const contourSet = node(`${imageItem.id}:contours`, "Contour Set", "contourSet", { image });
+    contourSet.children = state.project.contours.map((contour, index) =>
+      node(contourNodeId(index), contour.name || contour.id || contour.path, "contour", { data: contour, index }),
+    );
+    imageItem.children = [contourSet];
+    return imageItem;
+  });
+
+  plans.children = state.project.plans.map((plan) => {
+    const planItem = node(planNodeId(plan), planLabel(plan), "plan", { data: plan });
+    const planImage = imageForPlanById(plan.id);
+    const imageBranch = node(`${planItem.id}:image`, "Image", "category", { plan });
+    if (planImage) {
+      const planImageItem = node(`${planItem.id}:image:${imageKey(planImage)}`, imageLabel(planImage), "image", { data: planImage });
+      const contourSet = node(`${planImageItem.id}:contours`, "Contour Set", "contourSet", { image: planImage, plan });
+      contourSet.children = state.project.contours.map((contour, index) =>
+        node(`${planItem.id}:contour:${index}`, contour.name || contour.id || contour.path, "contour", { data: contour, index }),
+      );
+      planImageItem.children = [contourSet];
+      imageBranch.children = [planImageItem];
+    }
+
+    const beamBranch = node(`${planItem.id}:beams`, "Beams", "category", { plan });
+    beamBranch.children = planBeams(plan).map((beam, index) =>
+      node(`${planItem.id}:beam:${index}`, beam.name || beam.label || `Beam ${index + 1}`, "beam", { data: beam, index, plan }),
+    );
+
+    const doseBranch = node(`${planItem.id}:doses`, "Dose", "category", { plan });
+    doseBranch.children = state.project.doses
+      .map((dose, index) => ({ dose, index }))
+      .filter(({ dose }) => dose.plan_id === plan.id)
+      .map(({ dose, index }) => node(doseNodeId(index), dose.id || dose.path, "dose", { data: dose, index, plan }));
+
+    planItem.children = [imageBranch, beamBranch, doseBranch];
+    return planItem;
+  });
+
+  patient.children = [images, plans];
+  registerNode(patient);
+  return [patient];
+}
+
+function node(id, label, type, extra = {}) {
+  return {
+    id,
+    label,
+    type,
+    children: [],
+    ...extra,
+  };
+}
+
+function registerNode(item) {
+  state.nodeRegistry.set(item.id, item);
+  item.children?.forEach(registerNode);
+}
+
+function renderTreeNode(item) {
+  return h(TreeItem, {
+    key: item.id,
+    itemId: item.id,
+    label: h(
+      "span",
+      {
+        className: `tree-label tree-label-${item.type}`,
+        onClick: (event) => {
+          event.stopPropagation();
+          selectTreeNode(item.id);
+        },
+      },
+      item.type === "contour" && h("span", { className: "object-swatch", style: { backgroundColor: contourColor(item.data) } }),
+      item.label,
+    ),
+    children: item.children?.map(renderTreeNode),
+  });
+}
+
+function selectTreeNode(itemId) {
+  state.ui.selectedNodeId = itemId;
+  renderApp();
+}
+
+function visibleTreeItems(tree) {
+  const ids = [];
+  for (const item of flattenTree(tree)) {
+    if (isNodeVisible(item)) {
+      ids.push(item.id);
+    }
+  }
+  return ids;
+}
+
+function isNodeVisible(item) {
+  if (item.type === "image") {
+    return imageKey(item.data) === state.loadedImageId;
+  }
+  if (item.type === "plan") {
+    return item.data.id === state.selectedPlanId;
+  }
+  if (item.type === "contour") {
+    return state.selected.contour.has(item.index);
+  }
+  if (item.type === "dose") {
+    return state.selected.dose.has(item.index);
+  }
+  if (item.type === "category" || item.type === "contourSet") {
+    const leaves = visibilityLeaves(item);
+    return leaves.length > 0 && leaves.every(isNodeVisible);
+  }
+  return false;
+}
+
+function defaultExpandedItems(tree) {
+  const expanded = [];
+  for (const item of flattenTree(tree)) {
+    if (["patient", "category", "contourSet", "plan"].includes(item.type)) {
+      expanded.push(item.id);
+    }
+  }
+  return expanded;
+}
+
+function flattenTree(items) {
+  const output = [];
+  for (const item of items) {
+    output.push(item);
+    output.push(...flattenTree(item.children || []));
+  }
+  return output;
+}
+
+async function handleTreeVisibilityChange(previousIds, nextIds) {
+  const previous = new Set(previousIds);
+  const next = new Set(nextIds);
+  const changedId = [...next].find((id) => !previous.has(id)) || [...previous].find((id) => !next.has(id));
+  if (!changedId) {
+    return;
+  }
+  const changedNode = state.nodeRegistry.get(changedId);
+  if (!changedNode) {
+    return;
+  }
+  await setNodeVisibility(changedNode, next.has(changedId));
+}
+
+async function setNodeVisibility(item, visible) {
+  if (item.type === "image") {
+    if (visible) {
+      await selectImage(imageKey(item.data));
+    } else if (imageKey(item.data) === state.loadedImageId) {
+      await selectImage("");
+    }
+    return;
+  }
+  if (item.type === "plan") {
+    if (visible) {
+      await selectPlan(item.data.id);
+    } else if (item.data.id === state.selectedPlanId) {
+      state.selectedPlanId = null;
+      state.selected.dose = new Set();
+      updateAllDoseVisibility();
+      renderApp();
+    }
+    return;
+  }
+  if (item.type === "contour") {
+    await setContourVisible(item.index, visible);
+    return;
+  }
+  if (item.type === "dose") {
+    await setDoseVisible(item.index, visible);
+    return;
+  }
+  const leaves = visibilityLeaves(item);
+  for (const leaf of leaves) {
+    await setNodeVisibility(leaf, visible);
+  }
+}
+
+function visibilityLeaves(item) {
+  if (["image", "plan", "contour", "dose"].includes(item.type)) {
+    return [item];
+  }
+  return (item.children || []).flatMap(visibilityLeaves);
+}
+
+function propertyForNode(nodeItem) {
+  if (!nodeItem) {
+    return null;
+  }
+  const baseRows = [["Type", nodeItem.type], ["ID", nodeItem.id]];
+  if (nodeItem.type === "patient") {
+    return { title: nodeItem.label, rows: baseRows, json: state.project.manifest.patient };
+  }
+  if (nodeItem.type === "image") {
+    return { title: nodeItem.label, rows: objectRows(nodeItem.data), json: nodeItem.data.metadata_json || nodeItem.data };
+  }
+  if (nodeItem.type === "plan") {
+    const detail = state.planDetails.get(nodeItem.data.id);
+    return { title: nodeItem.label, rows: objectRows(nodeItem.data), json: detail || nodeItem.data.metadata_json || nodeItem.data };
+  }
+  if (nodeItem.type === "beam") {
+    return { title: nodeItem.label, rows: baseRows, json: nodeItem.data };
+  }
+  if (nodeItem.type === "dose") {
+    return { title: nodeItem.label, rows: objectRows(nodeItem.data), json: nodeItem.data.metadata_json || nodeItem.data };
+  }
+  if (nodeItem.type === "contour") {
+    return { title: nodeItem.label, rows: objectRows(nodeItem.data), json: nodeItem.data.metadata_json || nodeItem.data };
+  }
+  return { title: nodeItem.label, rows: baseRows, json: null };
+}
+
+function objectRows(item) {
+  return [
+    ["ID", item.id || ""],
+    ["Name", item.name || item.metadata_json?.name || item.metadata_json?.label || ""],
+    ["Path", item.path || ""],
+    ["Format", item.format || ""],
+    ["Source", item.source || ""],
+  ];
+}
+
+function formatValue(value) {
+  if (value === null || value === undefined || value === "") {
+    return "n/a";
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function selectedPlan() {
+  if (!state.selectedPlanId || !state.project) {
+    return null;
+  }
+  return state.project.plans.find((plan) => plan.id === state.selectedPlanId) || null;
+}
+
+function selectedImage() {
+  if (!state.selectedImageId) {
+    return null;
+  }
+  return loadableImages().find((image) => imageKey(image) === state.selectedImageId || image.path === state.selectedImageId) || null;
+}
+
+function loadableImages() {
+  if (!state.project) {
+    return [];
+  }
+  return state.project.volumes.filter((volume) => volume.url && volume.format !== "DICOM");
+}
+
+function imageForPlan(plan) {
+  return imageForPlanById(plan?.id);
+}
+
+function imageForPlanById(planId) {
+  if (!planId) {
+    return null;
+  }
+  const plan = state.project.plans.find((candidate) => candidate.id === planId);
+  const planDoses = state.project.doses.filter((dose) => dose.plan_id === planId);
+  const referencedImagePath =
+    plan?.metadata_json?.reference_image ||
+    plan?.reference_image ||
+    planDoses.find((dose) => dose.reference_image || dose.metadata_json?.reference_image)?.reference_image ||
+    planDoses.find((dose) => dose.metadata_json?.reference_image)?.metadata_json?.reference_image ||
+    state.project.manifest.primary_image;
+  if (!referencedImagePath) {
+    return null;
+  }
+  return loadableImages().find((image) => image.path === referencedImagePath || image.id === referencedImagePath) || null;
+}
+
+function selectedPlanDoses() {
+  if (!state.selectedPlanId || !state.project) {
+    return [];
+  }
+  return state.project.doses
+    .map((dose, index) => ({ dose, index }))
+    .filter(({ dose }) => dose.plan_id === state.selectedPlanId);
+}
+
+function planBeams(plan) {
+  const detail = state.planDetails.get(plan.id);
+  if (detail?.beams?.length) {
+    return detail.beams;
+  }
+  const count = plan.metadata_json?.beam_count || 0;
+  return Array.from({ length: count }, (_, index) => ({ name: `Beam ${index + 1}` }));
+}
+
+function patientNodeId() {
+  return state.project ? `patient:${state.project.key}` : "patient";
+}
+
+function imageNodeId(image) {
+  return `image:${imageKey(image)}`;
+}
+
+function planNodeId(plan) {
+  return `plan:${plan.id}`;
+}
+
+function contourNodeId(index) {
+  return `contour:${index}`;
+}
+
+function doseNodeId(index) {
+  return `dose:${index}`;
+}
+
+function patientDisplayLabel() {
+  const patient = state.project?.manifest.patient || {};
+  return patient.id || patient.name || state.project?.key || "Patient";
+}
+
+function patientLabel(patient) {
+  const id = patient.patient?.id || patient.key;
+  const name = patient.patient?.name;
+  return name ? `${name} (${id})` : id;
+}
+
+function planLabel(plan) {
+  return plan.metadata_json?.label || plan.metadata_json?.name || plan.id || plan.path;
+}
+
+function imageLabel(image) {
+  const type = image.type || image.metadata_json?.modality || "Image";
+  return `${type} - ${imageKey(image)}`;
+}
+
+function imageKey(image) {
+  return image.id || image.path;
+}
+
+function contourColor(contour) {
+  return contour.metadata_json?.color || contour.color || "#e15759";
+}
+
+function contourColormap(index, color) {
+  const rgb = hexToRgb(color) || hexToRgb("#e15759");
+  const name = `contour_${index}_${rgb.join("_")}`;
+  state.nv.addColormap(name, {
+    R: [0, rgb[0]],
+    G: [0, rgb[1]],
+    B: [0, rgb[2]],
+    A: [0, 255],
+    I: [0, 1],
+  });
+  return name;
+}
+
+function hexToRgb(value) {
+  const match = String(value).trim().match(/^#?([0-9a-fA-F]{6})$/);
+  if (!match) {
+    return null;
+  }
+  const hex = match[1];
+  return [
+    parseInt(hex.slice(0, 2), 16),
+    parseInt(hex.slice(2, 4), 16),
+    parseInt(hex.slice(4, 6), 16),
+  ];
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+  return response.json();
+}
+
+main().catch((error) => {
+  console.error(error);
+  el.loadStatus.textContent = error.message || String(error);
+});

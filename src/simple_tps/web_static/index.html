@@ -6,50 +6,35 @@
     <title>Simple TPS Viewer</title>
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/static/styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@18.2.0",
+          "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+          "@mui/x-tree-view/SimpleTreeView": "https://esm.sh/@mui/x-tree-view@7.29.1/SimpleTreeView",
+          "@mui/x-tree-view/TreeItem": "https://esm.sh/@mui/x-tree-view@7.29.1/TreeItem"
+        }
+      }
+    </script>
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar">
-        <header class="brand">
-          <h1>Simple TPS</h1>
-          <span id="server-status">Starting</span>
-        </header>
-
-        <section class="panel">
-          <label for="patient-select">Patient</label>
-          <select id="patient-select"></select>
-        </section>
-
-        <section class="panel">
-          <label for="image-select">Image</label>
-          <select id="image-select"></select>
-        </section>
-
-        <section class="panel">
-          <label for="plan-select">Plan</label>
-          <select id="plan-select"></select>
-        </section>
-
-        <section class="panel">
-          <h2>Selected Plan</h2>
-          <dl id="plan-summary" class="summary"></dl>
-        </section>
-
-        <section class="panel">
-          <h2>Objects</h2>
-          <div id="object-list" class="object-list"></div>
-        </section>
+        <div id="sidebar-root"></div>
       </aside>
 
       <main class="viewer">
         <div class="toolbar">
           <button id="reload-button" type="button">Reload</button>
+          <button id="property-toggle" type="button">Properties</button>
           <span id="load-status">No patient loaded</span>
         </div>
         <canvas id="niivue-canvas"></canvas>
       </main>
+
+      <aside id="property-root" class="property-pane"></aside>
     </div>
 
-    <script type="module" src="/static/app.js"></script>
+    <script type="module" src="/static/tree_app.js"></script>
   </body>
 </html>

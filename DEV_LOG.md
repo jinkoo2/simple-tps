@@ -61,6 +61,9 @@
   stays metadata-only; users can load an image manually, while plan selection
   loads the image referenced by the selected plan's dose metadata before dose
   overlays are shown.
+- Redesigned the web viewer shell with a hamburger menu, Patient > Open search
+  dialog, MUI Tree View object browser, visibility checkboxes, and a togglable
+  right-side property pane.
 
 ## Open Implementation Notes
 
