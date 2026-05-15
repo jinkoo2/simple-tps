@@ -64,6 +64,9 @@
 - Redesigned the web viewer shell with a hamburger menu, Patient > Open search
   dialog, MUI Tree View object browser, visibility checkboxes, and a togglable
   right-side property pane.
+- Replaced the CDN MUI Tree View runtime with a local React tree component
+  after repeated duplicate-context errors from the CDN module graph; retained
+  the same object tree, checkbox visibility, and property-pane behavior.
 
 ## Open Implementation Notes
 

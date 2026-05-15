@@ -272,27 +272,6 @@ button:hover {
   padding: 10px 8px 18px;
 }
 
-.tree-panel .MuiTreeItem-content {
-  min-height: 30px;
-  border-radius: 5px;
-  color: var(--text);
-}
-
-.tree-panel .MuiTreeItem-content:hover,
-.tree-panel .Mui-selected {
-  background: rgba(84, 184, 169, 0.12);
-}
-
-.tree-panel .MuiCheckbox-root,
-.tree-panel .MuiSvgIcon-root {
-  color: var(--muted);
-}
-
-.tree-panel .Mui-checked,
-.tree-panel .Mui-checked .MuiSvgIcon-root {
-  color: var(--accent);
-}
-
 .tree-label {
   display: inline-flex;
   align-items: center;
@@ -311,6 +290,55 @@ button:hover {
 .tree-label-patient,
 .tree-label-plan {
   font-weight: 750;
+}
+
+.local-tree {
+  display: grid;
+  gap: 1px;
+}
+
+.local-tree-node {
+  min-width: 0;
+}
+
+.local-tree-row {
+  min-height: 30px;
+  display: grid;
+  grid-template-columns: 22px 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  border-radius: 5px;
+  color: var(--text);
+  cursor: default;
+}
+
+.local-tree-row:hover,
+.local-tree-row.selected {
+  background: rgba(84, 184, 169, 0.12);
+}
+
+.local-tree-row input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.tree-expander {
+  width: 20px;
+  min-width: 20px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.tree-expander:disabled {
+  opacity: 0;
+  cursor: default;
 }
 
 .dialog-backdrop {

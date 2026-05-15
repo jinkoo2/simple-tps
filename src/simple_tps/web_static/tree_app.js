@@ -1,6 +1,5 @@
 import React, { useMemo } from "react";
 import { createRoot } from "react-dom/client";
-import { RichTreeView } from "@mui/x-tree-view";
 import { Niivue } from "https://unpkg.com/@niivue/niivue@0.57.0/dist/index.js";
 
 const h = React.createElement;
@@ -27,6 +26,7 @@ const state = {
     patientDialogOpen: false,
     patientSearch: "",
     selectedNodeId: null,
+    expandedNodeIds: new Set(),
     propertyOpen: true,
   },
   nv: null,
@@ -384,15 +384,7 @@ function SidebarApp() {
       "section",
       { className: "tree-panel" },
       state.project
-        ? h(RichTreeView, {
-            checkboxSelection: true,
-            multiSelect: true,
-            items: tree,
-            selectedItems: visibleItems,
-            defaultExpandedItems: defaultExpandedItems(tree),
-            onSelectedItemsChange: (_event, itemIds) => handleTreeVisibilityChange(visibleItems, itemIds),
-            onItemClick: (_event, itemId) => selectTreeNode(itemId),
-          })
+        ? h(TreeView, { items: tree, visibleItems })
         : h("div", { className: "empty-state" }, "Open a patient from the menu."),
     ),
     state.ui.patientDialogOpen && h(PatientSearchDialog),
@@ -594,6 +586,74 @@ function registerNode(item) {
   item.children?.forEach(registerNode);
 }
 
+function TreeView({ items, visibleItems }) {
+  const visible = new Set(visibleItems);
+  for (const item of flattenTree(items)) {
+    if (item.children?.length && !state.ui.expandedNodeIds.has(item.id)) {
+      state.ui.expandedNodeIds.add(item.id);
+    }
+  }
+  return h("div", { className: "local-tree", role: "tree" }, items.map((item) => h(TreeNode, { key: item.id, item, visible, depth: 0 })));
+}
+
+function TreeNode({ item, visible, depth }) {
+  const hasChildren = item.children?.length > 0;
+  const expanded = state.ui.expandedNodeIds.has(item.id);
+  const checked = visible.has(item.id);
+  const selected = state.ui.selectedNodeId === item.id;
+  return h(
+    "div",
+    { className: "local-tree-node", role: "treeitem", "aria-expanded": hasChildren ? expanded : undefined },
+    h(
+      "div",
+      {
+        className: `local-tree-row ${selected ? "selected" : ""}`,
+        style: { paddingLeft: `${8 + depth * 18}px` },
+        onClick: () => selectTreeNode(item.id),
+      },
+      h(
+        "button",
+        {
+          type: "button",
+          className: "tree-expander",
+          disabled: !hasChildren,
+          "aria-label": expanded ? "Collapse" : "Expand",
+          onClick: (event) => {
+            event.stopPropagation();
+            toggleExpanded(item.id);
+          },
+        },
+        hasChildren ? (expanded ? "v" : ">") : "",
+      ),
+      h("input", {
+        type: "checkbox",
+        checked,
+        onChange: (event) => {
+          event.stopPropagation();
+          setNodeVisibility(item, event.currentTarget.checked);
+        },
+        onClick: (event) => event.stopPropagation(),
+      }),
+      h(
+        "span",
+        { className: `tree-label tree-label-${item.type}` },
+        item.type === "contour" && h("span", { className: "object-swatch", style: { backgroundColor: contourColor(item.data) } }),
+        item.label,
+      ),
+    ),
+    hasChildren && expanded && h("div", { role: "group" }, item.children.map((child) => h(TreeNode, { key: child.id, item: child, visible, depth: depth + 1 }))),
+  );
+}
+
+function toggleExpanded(itemId) {
+  if (state.ui.expandedNodeIds.has(itemId)) {
+    state.ui.expandedNodeIds.delete(itemId);
+  } else {
+    state.ui.expandedNodeIds.add(itemId);
+  }
+  renderApp();
+}
+
 function selectTreeNode(itemId) {
   state.ui.selectedNodeId = itemId;
   renderApp();
@@ -629,16 +689,6 @@ function isNodeVisible(item) {
   return false;
 }
 
-function defaultExpandedItems(tree) {
-  const expanded = [];
-  for (const item of flattenTree(tree)) {
-    if (["patient", "category", "contourSet", "plan"].includes(item.type)) {
-      expanded.push(item.id);
-    }
-  }
-  return expanded;
-}
-
 function flattenTree(items) {
   const output = [];
   for (const item of items) {
@@ -646,20 +696,6 @@ function flattenTree(items) {
     output.push(...flattenTree(item.children || []));
   }
   return output;
-}
-
-async function handleTreeVisibilityChange(previousIds, nextIds) {
-  const previous = new Set(previousIds);
-  const next = new Set(nextIds);
-  const changedId = [...next].find((id) => !previous.has(id)) || [...previous].find((id) => !next.has(id));
-  if (!changedId) {
-    return;
-  }
-  const changedNode = state.nodeRegistry.get(changedId);
-  if (!changedNode) {
-    return;
-  }
-  await setNodeVisibility(changedNode, next.has(changedId));
 }
 
 async function setNodeVisibility(item, visible) {
