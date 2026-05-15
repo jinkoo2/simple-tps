@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { createRoot } from "react-dom/client";
-import { SimpleTreeView, TreeItem } from "@mui/x-tree-view";
+import { RichTreeView } from "@mui/x-tree-view";
 import { Niivue } from "https://unpkg.com/@niivue/niivue@0.57.0/dist/index.js";
 
 const h = React.createElement;
@@ -375,13 +375,14 @@ function SidebarApp() {
       "section",
       { className: "tree-panel" },
       state.project
-        ? h(SimpleTreeView, {
+        ? h(RichTreeView, {
             checkboxSelection: true,
             multiSelect: true,
+            items: tree,
             selectedItems: visibleItems,
             defaultExpandedItems: defaultExpandedItems(tree),
             onSelectedItemsChange: (_event, itemIds) => handleTreeVisibilityChange(visibleItems, itemIds),
-            children: tree.map(renderTreeNode),
+            onItemClick: (_event, itemId) => selectTreeNode(itemId),
           })
         : h("div", { className: "empty-state" }, "Open a patient from the menu."),
     ),
@@ -582,26 +583,6 @@ function node(id, label, type, extra = {}) {
 function registerNode(item) {
   state.nodeRegistry.set(item.id, item);
   item.children?.forEach(registerNode);
-}
-
-function renderTreeNode(item) {
-  return h(TreeItem, {
-    key: item.id,
-    itemId: item.id,
-    label: h(
-      "span",
-      {
-        className: `tree-label tree-label-${item.type}`,
-        onClick: (event) => {
-          event.stopPropagation();
-          selectTreeNode(item.id);
-        },
-      },
-      item.type === "contour" && h("span", { className: "object-swatch", style: { backgroundColor: contourColor(item.data) } }),
-      item.label,
-    ),
-    children: item.children?.map(renderTreeNode),
-  });
 }
 
 function selectTreeNode(itemId) {
