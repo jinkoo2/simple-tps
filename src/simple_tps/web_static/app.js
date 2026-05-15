@@ -4,6 +4,8 @@ const state = {
   config: null,
   patients: [],
   project: null,
+  selectedImageId: null,
+  loadedImageId: null,
   selectedPlanId: null,
   selected: {
     dose: new Set(),
@@ -20,6 +22,7 @@ const state = {
 const el = {
   status: document.getElementById("server-status"),
   patientSelect: document.getElementById("patient-select"),
+  imageSelect: document.getElementById("image-select"),
   planSelect: document.getElementById("plan-select"),
   planSummary: document.getElementById("plan-summary"),
   objectList: document.getElementById("object-list"),
@@ -37,6 +40,7 @@ async function main() {
 
   el.reloadButton.addEventListener("click", () => loadSelectedPatient());
   el.patientSelect.addEventListener("change", () => loadSelectedPatient());
+  el.imageSelect.addEventListener("change", () => selectImage(el.imageSelect.value));
   el.planSelect.addEventListener("change", () => selectPlan(el.planSelect.value));
 
   state.config = await fetchJson("/api/config");
@@ -76,20 +80,31 @@ async function loadSelectedPatient() {
   el.loadStatus.textContent = "Loading patient";
   state.project = await fetchJson(`/api/patients/${encodeURIComponent(patientKey)}/project`);
   initializeObjectSelection();
+  renderImageSelect();
   renderPlanSelect();
   renderProjectPanel();
   renderObjectList();
-  await loadProjectVolumes();
+  el.loadStatus.textContent = "Patient loaded";
 }
 
 function clearPatientState(statusText) {
   state.project = null;
+  state.selectedImageId = null;
+  state.loadedImageId = null;
   state.selectedPlanId = null;
   state.selected.dose = new Set();
   state.selected.contour = new Set();
   state.planDetails = new Map();
   state.overlayVolumes.dose = new Map();
   state.overlayVolumes.contour = new Map();
+
+  el.imageSelect.replaceChildren();
+  const imagePlaceholder = document.createElement("option");
+  imagePlaceholder.value = "";
+  imagePlaceholder.textContent = "Select an image";
+  el.imageSelect.append(imagePlaceholder);
+  el.imageSelect.value = "";
+  el.imageSelect.disabled = true;
 
   el.planSelect.replaceChildren();
   const planPlaceholder = document.createElement("option");
@@ -116,9 +131,28 @@ function clearViewerVolumes() {
 }
 
 function initializeObjectSelection() {
+  state.selectedImageId = null;
+  state.loadedImageId = null;
   state.selectedPlanId = null;
   state.selected.dose = new Set();
   state.selected.contour = new Set();
+}
+
+function renderImageSelect() {
+  el.imageSelect.replaceChildren();
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select an image";
+  el.imageSelect.append(placeholder);
+
+  for (const image of loadableImages()) {
+    const option = document.createElement("option");
+    option.value = image.id || image.path;
+    option.textContent = imageLabel(image);
+    el.imageSelect.append(option);
+  }
+  el.imageSelect.disabled = loadableImages().length === 0;
+  el.imageSelect.value = state.selectedImageId || "";
 }
 
 function renderPlanSelect() {
@@ -150,18 +184,37 @@ async function selectPlan(planId) {
   updateAllDoseVisibility();
 }
 
-async function loadProjectVolumes() {
-  const project = state.project;
-  const base = project.volumes.find((volume) => volume.id === "ct" && volume.url) || project.volumes.find((volume) => volume.url);
-  if (!base) {
+async function selectImage(imageId) {
+  state.selectedImageId = imageId || null;
+  state.selected.dose = new Set();
+  state.selected.contour = new Set();
+  state.overlayVolumes.dose = new Map();
+  state.overlayVolumes.contour = new Map();
+  renderProjectPanel();
+  renderObjectList();
+
+  if (!state.selectedImageId) {
+    state.loadedImageId = null;
+    clearViewerVolumes();
+    el.loadStatus.textContent = "Select an image";
+    return;
+  }
+  await loadBaseImage(selectedImage());
+}
+
+async function loadBaseImage(image) {
+  state.loadedImageId = null;
+  if (!image?.url) {
+    clearViewerVolumes();
     el.loadStatus.textContent = "No loadable image volume";
     return;
   }
-
+  clearViewerVolumes();
   try {
-    await state.nv.loadVolumes([volumeDescriptor(base, "CT", "gray", 1)]);
+    await state.nv.loadVolumes([volumeDescriptor(image, "Image", "gray", 1)]);
     state.nv.setSliceType(state.nv.sliceTypeMultiplanar);
-    el.loadStatus.textContent = "CT loaded";
+    state.loadedImageId = imageKey(image);
+    el.loadStatus.textContent = "Image loaded";
   } catch (error) {
     console.error(error);
     el.loadStatus.textContent = `Load failed: ${error.message || error}`;
@@ -175,6 +228,18 @@ async function loadSelectedPlanObjects() {
   }
   el.loadStatus.textContent = "Loading plan";
   await loadPlanDetails(plan);
+  const planImage = imageForPlan(plan);
+  if (planImage && imageKey(planImage) !== state.loadedImageId) {
+    state.selectedImageId = imageKey(planImage);
+    el.imageSelect.value = state.selectedImageId;
+    state.overlayVolumes.dose = new Map();
+    state.overlayVolumes.contour = new Map();
+    await loadBaseImage(planImage);
+  }
+  if (!state.loadedImageId) {
+    el.loadStatus.textContent = "Select an image before loading plan objects";
+    return;
+  }
   await Promise.all(selectedPlanDoses().map(({ dose, index }) => ensureOverlayVolume("dose", index, dose, true)));
   el.loadStatus.textContent = "Plan loaded";
 }
@@ -314,10 +379,11 @@ function renderProjectPanel() {
   const manifest = state.project.manifest;
   const plan = selectedPlan();
   const planDoseCount = selectedPlanDoses().length;
+  const image = selectedImage();
   const rows = [
     ["Patient", manifest.patient?.name || manifest.patient?.id || state.project.key],
     ["ID", manifest.patient?.id || ""],
-    ["Image", manifest.primary_image || ""],
+    ["Image", image?.path || ""],
     ["Plans", String(state.project.plans.length)],
     ["Contours", String(state.project.contours.length)],
     ["Doses", String(planDoseCount)],
@@ -353,6 +419,34 @@ function selectedPlan() {
   return state.project.plans.find((plan) => plan.id === state.selectedPlanId) || state.project.plans[0] || null;
 }
 
+function selectedImage() {
+  if (!state.selectedImageId) {
+    return null;
+  }
+  return loadableImages().find((image) => imageKey(image) === state.selectedImageId || image.path === state.selectedImageId) || null;
+}
+
+function loadableImages() {
+  if (!state.project) {
+    return [];
+  }
+  return state.project.volumes.filter((volume) => volume.url && volume.format !== "DICOM");
+}
+
+function imageForPlan(plan) {
+  const planDoses = selectedPlanDoses();
+  const referencedImagePath =
+    plan?.metadata_json?.reference_image ||
+    plan?.reference_image ||
+    planDoses.find(({ dose }) => dose.reference_image || dose.metadata_json?.reference_image)?.dose?.reference_image ||
+    planDoses.find(({ dose }) => dose.metadata_json?.reference_image)?.dose?.metadata_json?.reference_image ||
+    state.project.manifest.primary_image;
+  if (!referencedImagePath) {
+    return null;
+  }
+  return loadableImages().find((image) => image.path === referencedImagePath || image.id === referencedImagePath) || null;
+}
+
 function selectedPlanDoses() {
   if (!state.selectedPlanId) {
     return [];
@@ -364,6 +458,15 @@ function selectedPlanDoses() {
 
 function planLabel(plan) {
   return plan.metadata_json?.label || plan.metadata_json?.name || plan.id || plan.path;
+}
+
+function imageLabel(image) {
+  const type = image.type || image.metadata_json?.modality || "Image";
+  return `${type} - ${imageKey(image)}`;
+}
+
+function imageKey(image) {
+  return image.id || image.path;
 }
 
 function objectCheckbox(kind, index, name, detail, checked) {

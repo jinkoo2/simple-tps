@@ -57,6 +57,10 @@
 - Changed the web viewer to lazy-load binary volumes: patient selection loads
   only project metadata and the CT, plan selection loads the plan JSON and its
   dose volume, and contour masks load only when checked.
+- Added an explicit image selector to the web viewer. Patient selection now
+  stays metadata-only; users can load an image manually, while plan selection
+  loads the image referenced by the selected plan's dose metadata before dose
+  overlays are shown.
 
 ## Open Implementation Notes
 
