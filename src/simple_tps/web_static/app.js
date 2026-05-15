@@ -4,6 +4,7 @@ const state = {
   config: null,
   patients: [],
   project: null,
+  selectedPlanId: null,
   selected: {
     dose: new Set(),
     contour: new Set(),
@@ -18,6 +19,7 @@ const state = {
 const el = {
   status: document.getElementById("server-status"),
   patientSelect: document.getElementById("patient-select"),
+  planSelect: document.getElementById("plan-select"),
   planSummary: document.getElementById("plan-summary"),
   objectList: document.getElementById("object-list"),
   loadStatus: document.getElementById("load-status"),
@@ -34,6 +36,7 @@ async function main() {
 
   el.reloadButton.addEventListener("click", () => loadSelectedPatient());
   el.patientSelect.addEventListener("change", () => loadSelectedPatient());
+  el.planSelect.addEventListener("change", () => selectPlan(el.planSelect.value));
 
   state.config = await fetchJson("/api/config");
   await loadPatients();
@@ -75,14 +78,38 @@ async function loadSelectedPatient() {
   el.loadStatus.textContent = "Loading patient";
   state.project = await fetchJson(`/api/patients/${encodeURIComponent(patientKey)}/project`);
   initializeObjectSelection();
+  renderPlanSelect();
   renderProjectPanel();
   renderObjectList();
   await loadProjectVolumes();
 }
 
 function initializeObjectSelection() {
-  state.selected.dose = new Set(state.project.doses.map((_, index) => index));
+  state.selectedPlanId = state.project.plans[0]?.id || null;
+  state.selected.dose = new Set(selectedPlanDoses().map(({ index }) => index));
   state.selected.contour = new Set(state.project.contours.map((_, index) => index));
+}
+
+function renderPlanSelect() {
+  el.planSelect.replaceChildren();
+  for (const plan of state.project.plans) {
+    const option = document.createElement("option");
+    option.value = plan.id;
+    option.textContent = planLabel(plan);
+    el.planSelect.append(option);
+  }
+  el.planSelect.disabled = state.project.plans.length <= 1;
+  if (state.selectedPlanId) {
+    el.planSelect.value = state.selectedPlanId;
+  }
+}
+
+function selectPlan(planId) {
+  state.selectedPlanId = planId;
+  state.selected.dose = new Set(selectedPlanDoses().map(({ index }) => index));
+  renderProjectPanel();
+  renderObjectList();
+  updateAllDoseVisibility();
 }
 
 async function loadProjectVolumes() {
@@ -139,6 +166,12 @@ function updateOverlayVisibility(kind, index, checked) {
   state.nv.setOpacity(overlay.volumeIndex, checked ? overlay.opacity : 0);
 }
 
+function updateAllDoseVisibility() {
+  for (const [index, overlay] of state.overlayVolumes.dose.entries()) {
+    state.nv.setOpacity(overlay.volumeIndex, state.selected.dose.has(index) ? overlay.opacity : 0);
+  }
+}
+
 function volumeDescriptor(item, fallbackName, colormap, opacity) {
   return {
     url: item.url,
@@ -187,13 +220,15 @@ function hexToRgb(value) {
 
 function renderProjectPanel() {
   const manifest = state.project.manifest;
-  const plan = state.project.plans[0];
+  const plan = selectedPlan();
+  const planDoseCount = selectedPlanDoses().length;
   const rows = [
     ["Patient", manifest.patient?.name || manifest.patient?.id || state.project.key],
     ["ID", manifest.patient?.id || ""],
     ["Image", manifest.primary_image || ""],
+    ["Plans", String(state.project.plans.length)],
     ["Contours", String(state.project.contours.length)],
-    ["Doses", String(state.project.doses.length)],
+    ["Doses", String(planDoseCount)],
     ["Plan", plan?.path || ""],
   ];
 
@@ -209,7 +244,7 @@ function renderProjectPanel() {
 
 function renderObjectList() {
   el.objectList.replaceChildren();
-  for (const [index, dose] of state.project.doses.entries()) {
+  for (const { dose, index } of selectedPlanDoses()) {
     el.objectList.append(objectCheckbox("dose", index, dose.id || dose.path, dose.path, state.selected.dose.has(index)));
   }
   for (const [index, contour] of state.project.contours.entries()) {
@@ -217,6 +252,20 @@ function renderObjectList() {
       objectCheckbox("contour", index, contour.name || contour.id || contour.path, contour.path, state.selected.contour.has(index)),
     );
   }
+}
+
+function selectedPlan() {
+  return state.project.plans.find((plan) => plan.id === state.selectedPlanId) || state.project.plans[0] || null;
+}
+
+function selectedPlanDoses() {
+  return state.project.doses
+    .map((dose, index) => ({ dose, index }))
+    .filter(({ dose }) => !state.selectedPlanId || dose.plan_id === state.selectedPlanId);
+}
+
+function planLabel(plan) {
+  return plan.metadata_json?.label || plan.metadata_json?.name || plan.id || plan.path;
 }
 
 function objectCheckbox(kind, index, name, detail, checked) {

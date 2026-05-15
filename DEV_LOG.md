@@ -48,6 +48,8 @@
   folder and merge multiple plans/doses into the same patient manifest by UID.
 - Updated the web viewer to read contour colors from metadata sidecars and
   register per-contour NiiVue colormaps instead of rendering all masks red.
+- Added a plan selector to the web viewer so multi-plan patients can switch
+  active plan and see only doses associated with that plan.
 
 ## Open Implementation Notes
 
