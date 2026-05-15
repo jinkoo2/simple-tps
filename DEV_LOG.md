@@ -54,6 +54,9 @@
   hidden until the user chooses a plan.
 - Changed web page load so no patient is selected by default, and patient
   changes clear dependent plan/object/viewer state before loading the new data.
+- Changed the web viewer to lazy-load binary volumes: patient selection loads
+  only project metadata and the CT, plan selection loads the plan JSON and its
+  dose volume, and contour masks load only when checked.
 
 ## Open Implementation Notes
 

@@ -9,6 +9,7 @@ const state = {
     dose: new Set(),
     contour: new Set(),
   },
+  planDetails: new Map(),
   overlayVolumes: {
     dose: new Map(),
     contour: new Map(),
@@ -86,6 +87,7 @@ function clearPatientState(statusText) {
   state.selectedPlanId = null;
   state.selected.dose = new Set();
   state.selected.contour = new Set();
+  state.planDetails = new Map();
   state.overlayVolumes.dose = new Map();
   state.overlayVolumes.contour = new Map();
 
@@ -116,7 +118,7 @@ function clearViewerVolumes() {
 function initializeObjectSelection() {
   state.selectedPlanId = null;
   state.selected.dose = new Set();
-  state.selected.contour = new Set(state.project.contours.map((_, index) => index));
+  state.selected.contour = new Set();
 }
 
 function renderPlanSelect() {
@@ -136,11 +138,15 @@ function renderPlanSelect() {
   el.planSelect.value = state.selectedPlanId || "";
 }
 
-function selectPlan(planId) {
+async function selectPlan(planId) {
   state.selectedPlanId = planId || null;
   state.selected.dose = new Set(selectedPlanDoses().map(({ index }) => index));
   renderProjectPanel();
   renderObjectList();
+  updateAllDoseVisibility();
+  if (state.selectedPlanId) {
+    await loadSelectedPlanObjects();
+  }
   updateAllDoseVisibility();
 }
 
@@ -152,56 +158,110 @@ async function loadProjectVolumes() {
     return;
   }
 
-  state.overlayVolumes.dose = new Map();
-  state.overlayVolumes.contour = new Map();
-  const volumes = [
-    volumeDescriptor(base, "CT", "gray", 1),
-  ];
-
-  project.doses.forEach((dose, index) => {
-    if (dose.url) {
-      state.overlayVolumes.dose.set(index, {
-        volumeIndex: volumes.length,
-        opacity: 0.36,
-      });
-      volumes.push(volumeDescriptor(dose, "Dose", "hot", state.selected.dose.has(index) ? 0.36 : 0));
-    }
-  });
-
-  project.contours.forEach((contour, index) => {
-    if (contour.url) {
-      const color = contourColor(contour);
-      const colormap = contourColormap(index, color);
-      state.overlayVolumes.contour.set(index, {
-        volumeIndex: volumes.length,
-        opacity: 0.46,
-      });
-      volumes.push(volumeDescriptor(contour, "Contour", colormap, state.selected.contour.has(index) ? 0.46 : 0));
-    }
-  });
-
   try {
-    await state.nv.loadVolumes(volumes);
+    await state.nv.loadVolumes([volumeDescriptor(base, "CT", "gray", 1)]);
     state.nv.setSliceType(state.nv.sliceTypeMultiplanar);
-    el.loadStatus.textContent = `${volumes.length} volume${volumes.length === 1 ? "" : "s"} loaded`;
+    el.loadStatus.textContent = "CT loaded";
   } catch (error) {
     console.error(error);
     el.loadStatus.textContent = `Load failed: ${error.message || error}`;
   }
 }
 
-function updateOverlayVisibility(kind, index, checked) {
-  const overlay = state.overlayVolumes[kind].get(index);
-  if (!overlay) {
+async function loadSelectedPlanObjects() {
+  const plan = selectedPlan();
+  if (!plan) {
     return;
   }
-  state.nv.setOpacity(overlay.volumeIndex, checked ? overlay.opacity : 0);
+  el.loadStatus.textContent = "Loading plan";
+  await loadPlanDetails(plan);
+  await Promise.all(selectedPlanDoses().map(({ dose, index }) => ensureOverlayVolume("dose", index, dose, true)));
+  el.loadStatus.textContent = "Plan loaded";
+}
+
+async function loadPlanDetails(plan) {
+  if (!plan.url || state.planDetails.has(plan.id)) {
+    return state.planDetails.get(plan.id) || null;
+  }
+  const detail = await fetchJson(plan.url);
+  state.planDetails.set(plan.id, detail);
+  return detail;
+}
+
+async function ensureOverlayVolume(kind, index, item, visible) {
+  const overlay = state.overlayVolumes[kind].get(index);
+  if (overlay?.volume) {
+    setOverlayOpacity(overlay, visible);
+    return overlay.volume;
+  }
+  if (!visible) {
+    return null;
+  }
+  if (overlay?.loading) {
+    const volume = await overlay.loading;
+    setOverlayOpacity(state.overlayVolumes[kind].get(index), visible);
+    return volume;
+  }
+  if (!item.url) {
+    return null;
+  }
+
+  const descriptor = overlayDescriptor(kind, index, item, visible);
+  const pending = state.nv.addVolumeFromUrl(descriptor);
+  state.overlayVolumes[kind].set(index, {
+    opacity: descriptor.opacity || overlayOpacity(kind),
+    loading: pending,
+  });
+  try {
+    const volume = await pending;
+    state.overlayVolumes[kind].set(index, {
+      volume,
+      opacity: descriptor.opacity || overlayOpacity(kind),
+    });
+    return volume;
+  } catch (error) {
+    state.overlayVolumes[kind].delete(index);
+    throw error;
+  }
+}
+
+async function updateOverlayVisibility(kind, index, checked) {
+  const item = kind === "dose" ? state.project.doses[index] : state.project.contours[index];
+  try {
+    await ensureOverlayVolume(kind, index, item, checked);
+  } catch (error) {
+    console.error(error);
+    el.loadStatus.textContent = `Load failed: ${error.message || error}`;
+  }
 }
 
 function updateAllDoseVisibility() {
   for (const [index, overlay] of state.overlayVolumes.dose.entries()) {
-    state.nv.setOpacity(overlay.volumeIndex, state.selected.dose.has(index) ? overlay.opacity : 0);
+    setOverlayOpacity(overlay, state.selected.dose.has(index));
   }
+}
+
+function setOverlayOpacity(overlay, visible) {
+  if (!overlay?.volume) {
+    return;
+  }
+  const volumeIndex = state.nv.getVolumeIndexByID(overlay.volume.id);
+  if (volumeIndex >= 0) {
+    state.nv.setOpacity(volumeIndex, visible ? overlay.opacity : 0);
+  }
+}
+
+function overlayDescriptor(kind, index, item, visible) {
+  if (kind === "contour") {
+    const color = contourColor(item);
+    const colormap = contourColormap(index, color);
+    return volumeDescriptor(item, "Contour", colormap, visible ? overlayOpacity(kind) : 0);
+  }
+  return volumeDescriptor(item, "Dose", "hot", visible ? overlayOpacity(kind) : 0);
+}
+
+function overlayOpacity(kind) {
+  return kind === "contour" ? 0.46 : 0.36;
 }
 
 function volumeDescriptor(item, fallbackName, colormap, opacity) {
