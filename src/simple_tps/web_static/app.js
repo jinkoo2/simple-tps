@@ -8,6 +8,10 @@ const state = {
     dose: new Set(),
     contour: new Set(),
   },
+  overlayVolumes: {
+    dose: new Map(),
+    contour: new Map(),
+  },
   nv: null,
 };
 
@@ -73,7 +77,7 @@ async function loadSelectedPatient() {
   initializeObjectSelection();
   renderProjectPanel();
   renderObjectList();
-  await renderVolumes();
+  await loadProjectVolumes();
 }
 
 function initializeObjectSelection() {
@@ -81,7 +85,7 @@ function initializeObjectSelection() {
   state.selected.contour = new Set(state.project.contours.map((_, index) => index));
 }
 
-async function renderVolumes() {
+async function loadProjectVolumes() {
   const project = state.project;
   const base = project.volumes.find((volume) => volume.id === "ct" && volume.url) || project.volumes.find((volume) => volume.url);
   if (!base) {
@@ -89,29 +93,48 @@ async function renderVolumes() {
     return;
   }
 
+  state.overlayVolumes.dose = new Map();
+  state.overlayVolumes.contour = new Map();
   const volumes = [
     volumeDescriptor(base, "CT", "gray", 1),
   ];
 
   project.doses.forEach((dose, index) => {
-    if (dose.url && state.selected.dose.has(index)) {
-      volumes.push(volumeDescriptor(dose, "Dose", "hot", 0.36));
+    if (dose.url) {
+      state.overlayVolumes.dose.set(index, {
+        volumeIndex: volumes.length,
+        opacity: 0.36,
+      });
+      volumes.push(volumeDescriptor(dose, "Dose", "hot", state.selected.dose.has(index) ? 0.36 : 0));
     }
   });
 
   project.contours.forEach((contour, index) => {
-    if (contour.url && state.selected.contour.has(index)) {
-      volumes.push(volumeDescriptor(contour, "Contour", "red", 0.46));
+    if (contour.url) {
+      state.overlayVolumes.contour.set(index, {
+        volumeIndex: volumes.length,
+        opacity: 0.46,
+      });
+      volumes.push(volumeDescriptor(contour, "Contour", "red", state.selected.contour.has(index) ? 0.46 : 0));
     }
   });
 
   try {
     await state.nv.loadVolumes(volumes);
+    state.nv.setSliceType(state.nv.sliceTypeMultiplanar);
     el.loadStatus.textContent = `${volumes.length} volume${volumes.length === 1 ? "" : "s"} loaded`;
   } catch (error) {
     console.error(error);
     el.loadStatus.textContent = `Load failed: ${error.message || error}`;
   }
+}
+
+function updateOverlayVisibility(kind, index, checked) {
+  const overlay = state.overlayVolumes[kind].get(index);
+  if (!overlay) {
+    return;
+  }
+  state.nv.setOpacity(overlay.volumeIndex, checked ? overlay.opacity : 0);
 }
 
 function volumeDescriptor(item, fallbackName, colormap, opacity) {
@@ -178,7 +201,7 @@ function objectCheckbox(kind, index, name, detail, checked) {
     } else {
       set.delete(index);
     }
-    await renderVolumes();
+    updateOverlayVisibility(kind, index, input.checked);
   });
 
   const text = document.createElement("span");

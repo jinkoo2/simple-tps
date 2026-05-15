@@ -42,6 +42,8 @@
   `.env.example`.
 - Fixed NiiVue volume loading for contour objects by passing file names with
   extensions, and added a browser tab icon.
+- Updated web overlay toggles to use NiiVue opacity changes instead of
+  reloading all volumes, and defaulted the viewer to multiplanar slice mode.
 
 ## Open Implementation Notes
 
