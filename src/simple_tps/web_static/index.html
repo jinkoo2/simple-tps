@@ -28,7 +28,10 @@
           <button id="property-toggle" type="button">Properties</button>
           <span id="load-status">No patient loaded</span>
         </div>
-        <canvas id="niivue-canvas"></canvas>
+        <div id="viewer-frame" class="viewer-frame empty">
+          <canvas id="niivue-canvas"></canvas>
+          <div id="viewer-placeholder" class="viewer-placeholder">Open a patient, then select an image or plan.</div>
+        </div>
       </main>
 
       <aside id="property-root" class="property-pane"></aside>

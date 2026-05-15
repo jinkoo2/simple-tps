@@ -35,6 +35,8 @@ const state = {
 const el = {
   sidebarRoot: document.getElementById("sidebar-root"),
   propertyRoot: document.getElementById("property-root"),
+  viewerFrame: document.getElementById("viewer-frame"),
+  viewerPlaceholder: document.getElementById("viewer-placeholder"),
   loadStatus: document.getElementById("load-status"),
   reloadButton: document.getElementById("reload-button"),
   propertyToggle: document.getElementById("property-toggle"),
@@ -53,6 +55,7 @@ async function main() {
     textHeight: 0.035,
   });
   await state.nv.attachTo("niivue-canvas");
+  setViewerEmpty(true);
 
   el.reloadButton.addEventListener("click", () => reloadCurrentPatient());
   el.propertyToggle.addEventListener("click", () => {
@@ -117,7 +120,7 @@ function clearViewerVolumes() {
   state.nv.volumes = [];
   state.nv.overlays = [];
   state.nv.meshes = [];
-  state.nv.drawScene();
+  setViewerEmpty(true);
 }
 
 function initializeObjectSelection() {
@@ -159,11 +162,17 @@ async function loadBaseImage(image) {
     await state.nv.loadVolumes([volumeDescriptor(image, "Image", "gray", 1)]);
     state.nv.setSliceType(state.nv.sliceTypeMultiplanar);
     state.loadedImageId = imageKey(image);
+    setViewerEmpty(false);
     el.loadStatus.textContent = "Image loaded";
   } catch (error) {
     console.error(error);
     el.loadStatus.textContent = `Load failed: ${error.message || error}`;
   }
+}
+
+function setViewerEmpty(empty) {
+  el.viewerFrame.classList.toggle("empty", empty);
+  el.viewerPlaceholder.hidden = !empty;
 }
 
 async function selectPlan(planId) {
