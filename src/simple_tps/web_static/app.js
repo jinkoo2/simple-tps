@@ -40,14 +40,18 @@ async function main() {
 
   state.config = await fetchJson("/api/config");
   await loadPatients();
-  selectInitialPatient();
-  await loadSelectedPatient();
+  clearPatientState("Select a patient");
 }
 
 async function loadPatients() {
   const payload = await fetchJson("/api/patients");
   state.patients = payload.patients;
   el.patientSelect.replaceChildren();
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select a patient";
+  el.patientSelect.append(placeholder);
 
   for (const patient of state.patients) {
     const option = document.createElement("option");
@@ -57,21 +61,14 @@ async function loadPatients() {
   }
 
   el.status.textContent = `${state.patients.length} patient${state.patients.length === 1 ? "" : "s"}`;
-}
-
-function selectInitialPatient() {
-  if (!state.patients.length) {
-    return;
-  }
-  const defaultPatient = state.config.default_patient;
-  const match = state.patients.find((patient) => patient.key === defaultPatient);
-  el.patientSelect.value = (match || state.patients[0]).key;
+  el.patientSelect.value = "";
 }
 
 async function loadSelectedPatient() {
+  clearPatientState("Loading patient");
   const patientKey = el.patientSelect.value;
   if (!patientKey) {
-    el.loadStatus.textContent = "No patient found";
+    clearPatientState("Select a patient");
     return;
   }
 
@@ -82,6 +79,38 @@ async function loadSelectedPatient() {
   renderProjectPanel();
   renderObjectList();
   await loadProjectVolumes();
+}
+
+function clearPatientState(statusText) {
+  state.project = null;
+  state.selectedPlanId = null;
+  state.selected.dose = new Set();
+  state.selected.contour = new Set();
+  state.overlayVolumes.dose = new Map();
+  state.overlayVolumes.contour = new Map();
+
+  el.planSelect.replaceChildren();
+  const planPlaceholder = document.createElement("option");
+  planPlaceholder.value = "";
+  planPlaceholder.textContent = "Select a plan";
+  el.planSelect.append(planPlaceholder);
+  el.planSelect.value = "";
+  el.planSelect.disabled = true;
+
+  el.planSummary.replaceChildren();
+  el.objectList.replaceChildren();
+  el.loadStatus.textContent = statusText;
+  clearViewerVolumes();
+}
+
+function clearViewerVolumes() {
+  if (!state.nv) {
+    return;
+  }
+  state.nv.volumes = [];
+  state.nv.overlays = [];
+  state.nv.meshes = [];
+  state.nv.drawScene();
 }
 
 function initializeObjectSelection() {

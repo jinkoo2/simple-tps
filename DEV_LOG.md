@@ -52,6 +52,8 @@
   active plan and see only doses associated with that plan.
 - Changed patient loading so no plan is selected by default; dose overlays stay
   hidden until the user chooses a plan.
+- Changed web page load so no patient is selected by default, and patient
+  changes clear dependent plan/object/viewer state before loading the new data.
 
 ## Open Implementation Notes
 
