@@ -44,6 +44,8 @@
   extensions, and added a browser tab icon.
 - Updated web overlay toggles to use NiiVue opacity changes instead of
   reloading all volumes, and defaulted the viewer to multiplanar slice mode.
+- Updated the DICOM importer to use DICOM PatientID as the default patient
+  folder and merge multiple plans/doses into the same patient manifest by UID.
 
 ## Open Implementation Notes
 

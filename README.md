@@ -107,7 +107,9 @@ to each generated object, and updates `patients/eclipse-001/project.json`.
 
 If `--patient-id`, `--patient-name`, or `--project` are omitted, the importer
 uses patient metadata from the DICOM files and derives the patient folder from
-the DICOM PatientID. Existing generated objects are skipped when their sidecar
+the DICOM PatientID. Multiple plans for the same DICOM PatientID are merged into
+one patient folder, with plan-specific files under `plans/<plan-id>/` and
+`doses/<plan-id>/`. Existing generated objects are skipped when their sidecar
 metadata UIDs match the incoming DICOM objects; use `--overwrite` to regenerate
 them.
 

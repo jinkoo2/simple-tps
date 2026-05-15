@@ -5,16 +5,16 @@ objects into Simple TPS working files, and records them in `project.json`.
 
 Generated working files:
     images/ct.mha
-    doses/rtdose-*.mha
+    doses/<plan-id>/rtdose-*.mha
     contours/*.mha
-    plans/plan.json
+    plans/<plan-id>/plan.json
 
 Generated metadata files:
     images/ct.json
-    doses/rtdose-*.json
+    doses/<plan-id>/rtdose-*.json
     contours/*.json
     contours/rtstruct.json
-    plans/plan.metadata.json
+    plans/<plan-id>/plan.metadata.json
 
 Run from the repository root:
     python examples/scripts/import_eclipse_dicom_patient.py
@@ -77,7 +77,7 @@ def main() -> int:
     source_metadata = read_source_metadata(grouped)
     patient_id = args.patient_id or source_metadata["patient"]["id"] or "unknown-patient"
     patient_name = args.patient_name or source_metadata["patient"]["name"] or patient_id
-    project_root = (args.project or Path("patients") / make_id(patient_id)).resolve()
+    project_root = (args.project or Path("patients") / patient_folder_name(patient_id)).resolve()
     manifest_path = project_root / Project.MANIFEST_NAME
 
     if manifest_path.exists():
@@ -88,6 +88,7 @@ def main() -> int:
 
     copied = {group_name: copy_group(project, files, group_name, overwrite=args.overwrite) for group_name, files in grouped.items() if files}
     ct_dir = "dicom/original/ct"
+    plan_context = read_plan_context(project, copied.get("rtplan", []))
     ct_image = None
     if not args.no_convert_images:
         ct_image = convert_ct_series_to_mha(project, ct_dir, source_metadata["ct"], args.overwrite)
@@ -95,9 +96,9 @@ def main() -> int:
     contour_masks = []
     plan_json = None
     if not args.no_convert_images:
-        dose_images = convert_doses_to_mha(project, copied.get("rtdose", []), ct_image or ct_dir, args.overwrite)
+        dose_images = convert_doses_to_mha(project, copied.get("rtdose", []), ct_image or ct_dir, plan_context["id"], args.overwrite)
         contour_masks = convert_rtstruct_to_masks(project, copied.get("rtstruct", []), ct_image, args.overwrite)
-        plan_json = convert_rtplan_to_json(project, copied.get("rtplan", []), args.overwrite)
+        plan_json = convert_rtplan_to_json(project, copied.get("rtplan", []), plan_context["id"], args.overwrite)
 
     project.manifest["primary_image"] = ct_image or ct_dir
     project.manifest["volumes"] = [
@@ -121,9 +122,21 @@ def main() -> int:
                 "metadata": "images/ct.json",
             },
         )
-    project.manifest["plans"] = build_plan_manifest_entries(plan_json, copied.get("rtplan", []))
-    project.manifest["contours"] = build_contour_manifest_entries(contour_masks, copied.get("rtstruct", []))
-    project.manifest["doses"] = build_dose_manifest_entries(dose_images, copied.get("rtdose", []), ct_image or ct_dir)
+    project.manifest["plans"] = merge_collection(
+        project,
+        "plans",
+        build_plan_manifest_entries(plan_json, copied.get("rtplan", []), plan_context["id"]),
+    )
+    project.manifest["contours"] = merge_collection(
+        project,
+        "contours",
+        build_contour_manifest_entries(contour_masks, copied.get("rtstruct", [])),
+    )
+    project.manifest["doses"] = merge_collection(
+        project,
+        "doses",
+        build_dose_manifest_entries(dose_images, copied.get("rtdose", []), ct_image or ct_dir),
+    )
     project.manifest["dicom"] = {
         "source": str(source),
         "import_type": "original_dicom_reference",
@@ -141,6 +154,7 @@ def main() -> int:
         project.manifest["dicom"]["contour_masks"] = [contour["path"] for contour in contour_masks]
     if plan_json:
         project.manifest["dicom"]["plan_json"] = plan_json
+        project.manifest["dicom"]["plan_id"] = plan_context["id"]
     project.save()
 
     try:
@@ -218,6 +232,19 @@ def read_source_metadata(grouped: dict[str, list[Path]]) -> dict[str, Any]:
     }
 
 
+def read_plan_context(project: Project, rtplan_paths: list[str]) -> dict[str, str]:
+    if not rtplan_paths:
+        return {"id": "plan", "label": "plan", "sop_instance_uid": ""}
+    dataset = read_dicom_dataset(project.resolve_path(rtplan_paths[0]), stop_before_pixels=True)
+    label = dicom_str(dataset, "RTPlanLabel") or dicom_str(dataset, "RTPlanName") or "plan"
+    uid = dicom_str(dataset, "SOPInstanceUID")
+    return {
+        "id": make_plan_id(label, uid),
+        "label": label,
+        "sop_instance_uid": uid,
+    }
+
+
 def copy_group(project: Project, files: list[Path], group_name: str, overwrite: bool) -> list[str]:
     destination = project.root / "dicom" / "original" / group_name
     destination.mkdir(parents=True, exist_ok=True)
@@ -280,11 +307,17 @@ def convert_ct_series_to_mha(project: Project, ct_dir: str, ct_metadata: dict[st
     return output_path.relative_to(project.root).as_posix()
 
 
-def convert_doses_to_mha(project: Project, dose_paths: list[str], reference_image: str, overwrite: bool) -> list[dict[str, Any]]:
+def convert_doses_to_mha(
+    project: Project,
+    dose_paths: list[str],
+    reference_image: str,
+    plan_id: str,
+    overwrite: bool,
+) -> list[dict[str, Any]]:
     converted = []
     for index, dose_path in enumerate(dose_paths, start=1):
         dataset = read_dicom_dataset(project.resolve_path(dose_path))
-        output_path = project.root / "doses" / f"rtdose-{index}.mha"
+        output_path = project.root / "doses" / plan_id / f"rtdose-{index}.mha"
         metadata_path = output_path.with_suffix(".json")
         metadata = dose_metadata(dataset, dose_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -307,7 +340,8 @@ def convert_doses_to_mha(project: Project, dose_paths: list[str], reference_imag
             )
         converted.append(
             {
-                "id": f"rtdose-{index}",
+                "id": f"{plan_id}-rtdose-{index}",
+                "plan_id": plan_id,
                 "path": output_path.relative_to(project.root).as_posix(),
                 "units": normalize_dose_units(getattr(dataset, "DoseUnits", "Gy")),
                 "format": "MHA",
@@ -403,14 +437,14 @@ def convert_rtstruct_to_masks(project: Project, rtstruct_paths: list[str], refer
     return masks
 
 
-def convert_rtplan_to_json(project: Project, rtplan_paths: list[str], overwrite: bool) -> str | None:
+def convert_rtplan_to_json(project: Project, rtplan_paths: list[str], plan_id: str, overwrite: bool) -> str | None:
     if not rtplan_paths:
         return None
 
     plans = [extract_rtplan(read_dicom_dataset(project.resolve_path(path), stop_before_pixels=True), path) for path in rtplan_paths]
     output = plans[0] if len(plans) == 1 else {"plans": plans}
-    output_path = project.root / "plans" / "plan.json"
-    metadata_path = project.root / "plans" / "plan.metadata.json"
+    output_path = project.root / "plans" / plan_id / "plan.json"
+    metadata_path = project.root / "plans" / plan_id / "plan.metadata.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     metadata = plan_metadata(read_dicom_dataset(project.resolve_path(rtplan_paths[0]), stop_before_pixels=True), rtplan_paths[0])
     if not object_already_imported(output_path, metadata_path, metadata, ["sop_instance_uid"], overwrite):
@@ -419,14 +453,14 @@ def convert_rtplan_to_json(project: Project, rtplan_paths: list[str], overwrite:
     return output_path.relative_to(project.root).as_posix()
 
 
-def build_plan_manifest_entries(plan_json: str | None, rtplan_paths: list[str]) -> list[dict[str, Any]]:
+def build_plan_manifest_entries(plan_json: str | None, rtplan_paths: list[str], plan_id: str) -> list[dict[str, Any]]:
     if plan_json:
         return [
             {
-                "id": "plan",
+                "id": plan_id,
                 "path": plan_json,
                 "format": "SIMPLE_TPS_PLAN_JSON",
-                "metadata": "plans/plan.metadata.json",
+                "metadata": Path(plan_json).with_name("plan.metadata.json").as_posix(),
                 "source": rtplan_paths[0] if rtplan_paths else None,
             }
         ]
@@ -464,6 +498,55 @@ def build_dose_manifest_entries(
         }
         for index, path in enumerate(rtdose_paths)
     ]
+
+
+def merge_collection(project: Project, collection_name: str, new_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    existing_items = list(project.manifest.get(collection_name, []))
+    merged = list(existing_items)
+    index_by_identity = {
+        item_identity(project, collection_name, item): index
+        for index, item in enumerate(existing_items)
+    }
+
+    for item in new_items:
+        identity = item_identity(project, collection_name, item)
+        if identity in index_by_identity:
+            merged[index_by_identity[identity]] = item
+        else:
+            index_by_identity[identity] = len(merged)
+            merged.append(item)
+    return merged
+
+
+def item_identity(project: Project, collection_name: str, item: dict[str, Any]) -> tuple[Any, ...]:
+    metadata = item_metadata(project, item)
+    if collection_name == "plans":
+        uid = metadata.get("sop_instance_uid")
+        if uid:
+            return ("plan", uid)
+    if collection_name == "doses":
+        uid = metadata.get("sop_instance_uid")
+        if uid:
+            return ("dose", uid)
+    if collection_name == "contours":
+        structure_uid = metadata.get("structure_set_sop_instance_uid")
+        roi_number = metadata.get("roi_number")
+        if structure_uid and roi_number is not None:
+            return ("contour", structure_uid, roi_number)
+    return (collection_name, item.get("id"), item.get("path"))
+
+
+def item_metadata(project: Project, item: dict[str, Any]) -> dict[str, Any]:
+    metadata_path = item.get("metadata")
+    if not metadata_path:
+        return {}
+    path = project.resolve_path(metadata_path)
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
 
 
 def patient_metadata(dataset: Any) -> dict[str, Any]:
@@ -861,9 +944,24 @@ def make_id(value: str) -> str:
     return item_id or "item"
 
 
+def make_plan_id(label: str, sop_instance_uid: str) -> str:
+    uid_suffix = sop_instance_uid.rsplit(".", 1)[-1] if sop_instance_uid else ""
+    plan_id = make_id(label)
+    if uid_suffix:
+        plan_id = f"{plan_id}-{make_id(uid_suffix)}"
+    return plan_id
+
+
 def safe_filename(value: str) -> str:
     filename = re.sub(r"[^a-zA-Z0-9_.-]+", "_", value.strip()).strip("._")
     return filename or "item"
+
+
+def patient_folder_name(value: str) -> str:
+    folder = re.sub(r"[^a-zA-Z0-9_.-]+", "_", value.strip()).strip(" .")
+    if folder in {"", ".", ".."}:
+        return "unknown-patient"
+    return folder
 
 
 def unique_id(item_id: str, used_ids: set[str]) -> str:
