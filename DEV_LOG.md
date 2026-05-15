@@ -40,6 +40,8 @@
   security headers.
 - Added `.env` support for local web authentication variables and documented
   `.env.example`.
+- Fixed NiiVue volume loading for contour objects by passing file names with
+  extensions, and added a browser tab icon.
 
 ## Open Implementation Notes
 

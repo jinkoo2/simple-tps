@@ -53,6 +53,9 @@ class ViewerHandler(SimpleHTTPRequestHandler):
         if path == "/":
             self.serve_static("index.html")
             return
+        if path == "/favicon.ico":
+            self.serve_static("favicon.svg")
+            return
         if path.startswith("/static/"):
             self.serve_static(path.removeprefix("/static/"))
             return

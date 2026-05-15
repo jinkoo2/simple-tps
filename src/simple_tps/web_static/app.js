@@ -90,36 +90,18 @@ async function renderVolumes() {
   }
 
   const volumes = [
-    {
-      url: base.url,
-      name: base.path || "CT",
-      colormap: "gray",
-      opacity: 1,
-      visible: true,
-    },
+    volumeDescriptor(base, "CT", "gray", 1),
   ];
 
   project.doses.forEach((dose, index) => {
     if (dose.url && state.selected.dose.has(index)) {
-      volumes.push({
-        url: dose.url,
-        name: dose.path || dose.id || "Dose",
-        colormap: "hot",
-        opacity: 0.36,
-        visible: true,
-      });
+      volumes.push(volumeDescriptor(dose, "Dose", "hot", 0.36));
     }
   });
 
   project.contours.forEach((contour, index) => {
     if (contour.url && state.selected.contour.has(index)) {
-      volumes.push({
-        url: contour.url,
-        name: contour.name || contour.path || "Contour",
-        colormap: "red",
-        opacity: 0.46,
-        visible: true,
-      });
+      volumes.push(volumeDescriptor(contour, "Contour", "red", 0.46));
     }
   });
 
@@ -130,6 +112,22 @@ async function renderVolumes() {
     console.error(error);
     el.loadStatus.textContent = `Load failed: ${error.message || error}`;
   }
+}
+
+function volumeDescriptor(item, fallbackName, colormap, opacity) {
+  return {
+    url: item.url,
+    name: volumeFileName(item, fallbackName),
+    colormap,
+    opacity,
+    visible: true,
+  };
+}
+
+function volumeFileName(item, fallbackName) {
+  const source = item.path || item.name || item.id || fallbackName;
+  const fileName = String(source).split("/").pop() || fallbackName;
+  return fileName.includes(".") ? fileName : `${fileName}.mha`;
 }
 
 function renderProjectPanel() {
