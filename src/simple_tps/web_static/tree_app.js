@@ -94,6 +94,7 @@ async function openPatient(patientKey) {
   state.ui.menuOpen = false;
   state.ui.patientSearch = "";
   state.ui.selectedNodeId = patientNodeId();
+  restoreExpandedNodes();
   el.loadStatus.textContent = "Patient loaded";
   renderApp();
 }
@@ -109,6 +110,7 @@ function clearPatientState(statusText) {
   state.overlayVolumes.dose = new Map();
   state.overlayVolumes.contour = new Map();
   state.nodeRegistry = new Map();
+  state.ui.expandedNodeIds = new Set();
   el.loadStatus.textContent = statusText;
   clearViewerVolumes();
 }
@@ -588,11 +590,6 @@ function registerNode(item) {
 
 function TreeView({ items, visibleItems }) {
   const visible = new Set(visibleItems);
-  for (const item of flattenTree(items)) {
-    if (item.children?.length && !state.ui.expandedNodeIds.has(item.id)) {
-      state.ui.expandedNodeIds.add(item.id);
-    }
-  }
   return h("div", { className: "local-tree", role: "tree" }, items.map((item) => h(TreeNode, { key: item.id, item, visible, depth: 0 })));
 }
 
@@ -651,7 +648,34 @@ function toggleExpanded(itemId) {
   } else {
     state.ui.expandedNodeIds.add(itemId);
   }
+  persistExpandedNodes();
   renderApp();
+}
+
+function restoreExpandedNodes() {
+  const key = expandedStorageKey();
+  if (!key) {
+    state.ui.expandedNodeIds = new Set();
+    return;
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) || "null");
+    state.ui.expandedNodeIds = Array.isArray(saved) ? new Set(saved) : new Set([patientNodeId()]);
+  } catch (error) {
+    state.ui.expandedNodeIds = new Set([patientNodeId()]);
+  }
+}
+
+function persistExpandedNodes() {
+  const key = expandedStorageKey();
+  if (!key) {
+    return;
+  }
+  localStorage.setItem(key, JSON.stringify([...state.ui.expandedNodeIds]));
+}
+
+function expandedStorageKey() {
+  return state.project ? `simple-tps:tree-expanded:${state.project.key}` : null;
 }
 
 function selectTreeNode(itemId) {

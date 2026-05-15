@@ -67,6 +67,8 @@
 - Replaced the CDN MUI Tree View runtime with a local React tree component
   after repeated duplicate-context errors from the CDN module graph; retained
   the same object tree, checkbox visibility, and property-pane behavior.
+- Fixed tree expand/collapse state so only the patient root opens by default
+  and expanded nodes persist per patient in browser localStorage.
 
 ## Open Implementation Notes
 
