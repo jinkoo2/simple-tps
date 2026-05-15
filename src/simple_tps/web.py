@@ -242,15 +242,23 @@ def project_payload(patient_key: str, project: Project) -> dict[str, Any]:
         "root": str(project.root),
         "manifest": manifest,
         "primary_image": object_with_url(patient_key, manifest.get("primary_image")),
-        "volumes": objects_with_urls(patient_key, manifest.get("volumes", [])),
-        "contours": objects_with_urls(patient_key, manifest.get("contours", [])),
-        "doses": objects_with_urls(patient_key, manifest.get("doses", [])),
-        "plans": objects_with_urls(patient_key, manifest.get("plans", [])),
+        "volumes": objects_with_urls(patient_key, project, manifest.get("volumes", [])),
+        "contours": objects_with_urls(patient_key, project, manifest.get("contours", [])),
+        "doses": objects_with_urls(patient_key, project, manifest.get("doses", [])),
+        "plans": objects_with_urls(patient_key, project, manifest.get("plans", [])),
     }
 
 
-def objects_with_urls(patient_key: str, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [{**item, "url": patient_file_url(patient_key, item.get("path"))} for item in items]
+def objects_with_urls(patient_key: str, project: Project, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            **item,
+            "url": patient_file_url(patient_key, item.get("path")),
+            "metadata_url": patient_file_url(patient_key, item.get("metadata")),
+            "metadata_json": read_object_metadata(project, item),
+        }
+        for item in items
+    ]
 
 
 def object_with_url(patient_key: str, path: str | None) -> dict[str, str] | None:
@@ -263,6 +271,19 @@ def patient_file_url(patient_key: str, path: str | None) -> str | None:
     if not path:
         return None
     return f"/patients/{patient_key}/{path}"
+
+
+def read_object_metadata(project: Project, item: dict[str, Any]) -> dict[str, Any] | None:
+    metadata_path = item.get("metadata")
+    if not metadata_path:
+        return None
+    path = project.resolve_path(metadata_path)
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
 
 
 def safe_join(root: Path, relative_path: str) -> Path | None:

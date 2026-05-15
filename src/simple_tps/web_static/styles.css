@@ -132,6 +132,16 @@ select {
   font-weight: 650;
 }
 
+.object-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 0 6px 0 0;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  vertical-align: 1px;
+}
+
 .object-kind {
   display: block;
   margin-top: 2px;

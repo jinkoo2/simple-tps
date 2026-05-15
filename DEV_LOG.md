@@ -46,6 +46,8 @@
   reloading all volumes, and defaulted the viewer to multiplanar slice mode.
 - Updated the DICOM importer to use DICOM PatientID as the default patient
   folder and merge multiple plans/doses into the same patient manifest by UID.
+- Updated the web viewer to read contour colors from metadata sidecars and
+  register per-contour NiiVue colormaps instead of rendering all masks red.
 
 ## Open Implementation Notes
 

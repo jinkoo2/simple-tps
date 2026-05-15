@@ -111,11 +111,13 @@ async function loadProjectVolumes() {
 
   project.contours.forEach((contour, index) => {
     if (contour.url) {
+      const color = contourColor(contour);
+      const colormap = contourColormap(index, color);
       state.overlayVolumes.contour.set(index, {
         volumeIndex: volumes.length,
         opacity: 0.46,
       });
-      volumes.push(volumeDescriptor(contour, "Contour", "red", state.selected.contour.has(index) ? 0.46 : 0));
+      volumes.push(volumeDescriptor(contour, "Contour", colormap, state.selected.contour.has(index) ? 0.46 : 0));
     }
   });
 
@@ -151,6 +153,36 @@ function volumeFileName(item, fallbackName) {
   const source = item.path || item.name || item.id || fallbackName;
   const fileName = String(source).split("/").pop() || fallbackName;
   return fileName.includes(".") ? fileName : `${fileName}.mha`;
+}
+
+function contourColor(contour) {
+  return contour.metadata_json?.color || contour.color || "#e15759";
+}
+
+function contourColormap(index, color) {
+  const rgb = hexToRgb(color) || hexToRgb("#e15759");
+  const name = `contour_${index}_${rgb.join("_")}`;
+  state.nv.addColormap(name, {
+    R: [0, rgb[0]],
+    G: [0, rgb[1]],
+    B: [0, rgb[2]],
+    A: [0, 255],
+    I: [0, 1],
+  });
+  return name;
+}
+
+function hexToRgb(value) {
+  const match = String(value).trim().match(/^#?([0-9a-fA-F]{6})$/);
+  if (!match) {
+    return null;
+  }
+  const hex = match[1];
+  return [
+    parseInt(hex.slice(0, 2), 16),
+    parseInt(hex.slice(2, 4), 16),
+    parseInt(hex.slice(4, 6), 16),
+  ];
 }
 
 function renderProjectPanel() {
@@ -205,6 +237,12 @@ function objectCheckbox(kind, index, name, detail, checked) {
   });
 
   const text = document.createElement("span");
+  if (kind === "contour") {
+    const swatch = document.createElement("span");
+    swatch.className = "object-swatch";
+    swatch.style.backgroundColor = contourColor(state.project.contours[index]);
+    text.append(swatch);
+  }
   const title = document.createElement("span");
   title.className = "object-name";
   title.textContent = name;
