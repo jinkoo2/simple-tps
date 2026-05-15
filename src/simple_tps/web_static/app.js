@@ -85,27 +85,30 @@ async function loadSelectedPatient() {
 }
 
 function initializeObjectSelection() {
-  state.selectedPlanId = state.project.plans[0]?.id || null;
-  state.selected.dose = new Set(selectedPlanDoses().map(({ index }) => index));
+  state.selectedPlanId = null;
+  state.selected.dose = new Set();
   state.selected.contour = new Set(state.project.contours.map((_, index) => index));
 }
 
 function renderPlanSelect() {
   el.planSelect.replaceChildren();
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select a plan";
+  el.planSelect.append(placeholder);
+
   for (const plan of state.project.plans) {
     const option = document.createElement("option");
     option.value = plan.id;
     option.textContent = planLabel(plan);
     el.planSelect.append(option);
   }
-  el.planSelect.disabled = state.project.plans.length <= 1;
-  if (state.selectedPlanId) {
-    el.planSelect.value = state.selectedPlanId;
-  }
+  el.planSelect.disabled = state.project.plans.length === 0;
+  el.planSelect.value = state.selectedPlanId || "";
 }
 
 function selectPlan(planId) {
-  state.selectedPlanId = planId;
+  state.selectedPlanId = planId || null;
   state.selected.dose = new Set(selectedPlanDoses().map(({ index }) => index));
   renderProjectPanel();
   renderObjectList();
@@ -255,13 +258,19 @@ function renderObjectList() {
 }
 
 function selectedPlan() {
+  if (!state.selectedPlanId) {
+    return null;
+  }
   return state.project.plans.find((plan) => plan.id === state.selectedPlanId) || state.project.plans[0] || null;
 }
 
 function selectedPlanDoses() {
+  if (!state.selectedPlanId) {
+    return [];
+  }
   return state.project.doses
     .map((dose, index) => ({ dose, index }))
-    .filter(({ dose }) => !state.selectedPlanId || dose.plan_id === state.selectedPlanId);
+    .filter(({ dose }) => dose.plan_id === state.selectedPlanId);
 }
 
 function planLabel(plan) {

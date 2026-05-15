@@ -50,6 +50,8 @@
   register per-contour NiiVue colormaps instead of rendering all masks red.
 - Added a plan selector to the web viewer so multi-plan patients can switch
   active plan and see only doses associated with that plan.
+- Changed patient loading so no plan is selected by default; dose overlays stay
+  hidden until the user chooses a plan.
 
 ## Open Implementation Notes
 
