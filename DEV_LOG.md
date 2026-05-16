@@ -77,6 +77,8 @@
   and added console debug logging around image selection and load lifecycle.
 - Added a global busy cursor while image, plan dose, and contour mask volume
   loads are in progress.
+- Forced the web viewer to use NiiVue's four-panel multiplanar grid with equal
+  panel sizes and the volume renderer always visible.
 
 ## Open Implementation Notes
 

@@ -4,6 +4,9 @@ import { Niivue } from "https://unpkg.com/@niivue/niivue@0.57.0/dist/index.js";
 
 const h = React.createElement;
 const LOG_PREFIX = "[simple-tps]";
+const MULTIPLANAR_LAYOUT_GRID = 2;
+const MULTIPLANAR_SHOW_RENDER_ALWAYS = 1;
+const SLICE_TYPE_RENDER = 4;
 
 const state = {
   config: null,
@@ -54,6 +57,11 @@ async function main() {
   state.nv = new Niivue({
     backColor: [0.02, 0.025, 0.03, 1],
     crosshairColor: [0.1, 0.85, 0.72, 1],
+    heroImageFraction: 0,
+    heroSliceType: SLICE_TYPE_RENDER,
+    multiplanarEqualSize: true,
+    multiplanarLayout: MULTIPLANAR_LAYOUT_GRID,
+    multiplanarShowRender: MULTIPLANAR_SHOW_RENDER_ALWAYS,
     textHeight: 0.035,
   });
   await state.nv.attachTo("niivue-canvas");
