@@ -155,6 +155,7 @@ async function selectImage(imageId) {
 async function loadBaseImage(image) {
   state.loadedImageId = null;
   if (!image?.url) {
+    state.selectedImageId = null;
     clearViewerVolumes();
     el.loadStatus.textContent = "No loadable image volume";
     return;
@@ -168,6 +169,9 @@ async function loadBaseImage(image) {
     el.loadStatus.textContent = "Image loaded";
   } catch (error) {
     console.error(error);
+    state.selectedImageId = null;
+    state.loadedImageId = null;
+    clearViewerVolumes();
     el.loadStatus.textContent = `Load failed: ${error.message || error}`;
   }
 }
@@ -695,7 +699,7 @@ function visibleTreeItems(tree) {
 
 function isNodeVisible(item) {
   if (item.type === "image") {
-    return imageKey(item.data) === state.loadedImageId;
+    return imageKey(item.data) === state.selectedImageId;
   }
   if (item.type === "plan") {
     return item.data.id === state.selectedPlanId;
@@ -726,7 +730,7 @@ async function setNodeVisibility(item, visible) {
   if (item.type === "image") {
     if (visible) {
       await selectImage(imageKey(item.data));
-    } else if (imageKey(item.data) === state.loadedImageId) {
+    } else if (imageKey(item.data) === state.selectedImageId) {
       await selectImage("");
     }
     return;

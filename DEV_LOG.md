@@ -69,6 +69,8 @@
   the same object tree, checkbox visibility, and property-pane behavior.
 - Fixed tree expand/collapse state so only the patient root opens by default
   and expanded nodes persist per patient in browser localStorage.
+- Changed image visibility checkboxes to follow the selected active image
+  immediately, while the viewer separately tracks the successfully loaded image.
 
 ## Open Implementation Notes
 
