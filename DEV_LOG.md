@@ -71,6 +71,8 @@
   and expanded nodes persist per patient in browser localStorage.
 - Changed image visibility checkboxes to follow the selected active image
   immediately, while the viewer separately tracks the successfully loaded image.
+- Switched base image loading to NiiVue's single-volume URL loader and added an
+  explicit "Loading image" status before the canvas leaves its empty state.
 
 ## Open Implementation Notes
 

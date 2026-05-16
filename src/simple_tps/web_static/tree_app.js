@@ -161,8 +161,9 @@ async function loadBaseImage(image) {
     return;
   }
   clearViewerVolumes();
+  el.loadStatus.textContent = "Loading image";
   try {
-    await state.nv.loadVolumes([volumeDescriptor(image, "Image", "gray", 1)]);
+    await state.nv.addVolumeFromUrl(volumeDescriptor(image, "Image", "gray", 1));
     state.nv.setSliceType(state.nv.sliceTypeMultiplanar);
     state.loadedImageId = imageKey(image);
     setViewerEmpty(false);
