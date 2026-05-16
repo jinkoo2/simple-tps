@@ -21,6 +21,7 @@ const state = {
     dose: new Map(),
     contour: new Map(),
   },
+  busyCount: 0,
   nodeRegistry: new Map(),
   ui: {
     menuOpen: false,
@@ -168,6 +169,7 @@ async function loadBaseImage(image) {
   }
   clearViewerVolumes();
   el.loadStatus.textContent = "Loading image";
+  beginBusy();
   try {
     const descriptor = volumeDescriptor(image, "Image", "gray", 1);
     debugLog("NiiVue loadVolumes start", descriptor);
@@ -191,6 +193,8 @@ async function loadBaseImage(image) {
     state.loadedImageId = null;
     clearViewerVolumes();
     el.loadStatus.textContent = `Load failed: ${error.message || error}`;
+  } finally {
+    endBusy();
   }
 }
 
@@ -198,6 +202,18 @@ function setViewerEmpty(empty) {
   debugLog("setViewerEmpty", { empty });
   el.viewerFrame.classList.toggle("empty", empty);
   el.viewerPlaceholder.hidden = !empty;
+}
+
+function beginBusy() {
+  state.busyCount += 1;
+  document.body.classList.add("busy");
+  debugLog("busy begin", { busyCount: state.busyCount });
+}
+
+function endBusy() {
+  state.busyCount = Math.max(0, state.busyCount - 1);
+  document.body.classList.toggle("busy", state.busyCount > 0);
+  debugLog("busy end", { busyCount: state.busyCount });
 }
 
 async function selectPlan(planId) {
@@ -218,20 +234,25 @@ async function loadSelectedPlanObjects() {
     return;
   }
   el.loadStatus.textContent = "Loading plan";
-  await loadPlanDetails(plan);
-  const planImage = imageForPlan(plan);
-  if (planImage && imageKey(planImage) !== state.loadedImageId) {
-    state.selectedImageId = imageKey(planImage);
-    state.overlayVolumes.dose = new Map();
-    state.overlayVolumes.contour = new Map();
-    await loadBaseImage(planImage);
+  beginBusy();
+  try {
+    await loadPlanDetails(plan);
+    const planImage = imageForPlan(plan);
+    if (planImage && imageKey(planImage) !== state.loadedImageId) {
+      state.selectedImageId = imageKey(planImage);
+      state.overlayVolumes.dose = new Map();
+      state.overlayVolumes.contour = new Map();
+      await loadBaseImage(planImage);
+    }
+    if (!state.loadedImageId) {
+      el.loadStatus.textContent = "Select an image before loading plan objects";
+      return;
+    }
+    await Promise.all(selectedPlanDoses().map(({ dose, index }) => ensureOverlayVolume("dose", index, dose, true)));
+    el.loadStatus.textContent = "Plan loaded";
+  } finally {
+    endBusy();
   }
-  if (!state.loadedImageId) {
-    el.loadStatus.textContent = "Select an image before loading plan objects";
-    return;
-  }
-  await Promise.all(selectedPlanDoses().map(({ dose, index }) => ensureOverlayVolume("dose", index, dose, true)));
-  el.loadStatus.textContent = "Plan loaded";
 }
 
 async function loadPlanDetails(plan) {
@@ -263,6 +284,7 @@ async function ensureOverlayVolume(kind, index, item, visible) {
   }
 
   const descriptor = overlayDescriptor(kind, index, item, visible);
+  beginBusy();
   const pending = state.nv.addVolumeFromUrl(descriptor);
   state.overlayVolumes[kind].set(index, {
     opacity: descriptor.opacity || overlayOpacity(kind),
@@ -278,6 +300,8 @@ async function ensureOverlayVolume(kind, index, item, visible) {
   } catch (error) {
     state.overlayVolumes[kind].delete(index);
     throw error;
+  } finally {
+    endBusy();
   }
 }
 
