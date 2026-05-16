@@ -37,6 +37,7 @@ const state = {
     contour: new Map(),
   },
   contourRenderModes: new Map(),
+  isDrawingScene: false,
   busyCount: 0,
   nodeRegistry: new Map(),
   ui: {
@@ -55,6 +56,7 @@ const el = {
   propertyRoot: document.getElementById("property-root"),
   viewerFrame: document.getElementById("viewer-frame"),
   viewerPlaceholder: document.getElementById("viewer-placeholder"),
+  contourLineOverlay: document.getElementById("contour-line-overlay"),
   loadStatus: document.getElementById("load-status"),
   reloadButton: document.getElementById("reload-button"),
   propertyToggle: document.getElementById("property-toggle"),
@@ -72,11 +74,13 @@ async function main() {
     crosshairColor: [0.1, 0.85, 0.72, 1],
     heroImageFraction: 0,
     heroSliceType: SLICE_TYPE_RENDER,
+    meshThicknessOn2D: 0,
     textHeight: 0.035,
   });
   await state.nv.attachTo("niivue-canvas");
   disableRenderVolumeRaycast();
   applyViewerLayout();
+  installContourLineRenderer();
   setViewerEmpty(true);
 
   el.reloadButton.addEventListener("click", () => reloadCurrentPatient());
@@ -146,6 +150,7 @@ function clearViewerVolumes() {
   state.nv.volumes = [];
   state.nv.overlays = [];
   state.nv.meshes = [];
+  clearContourLineOverlay();
   setViewerEmpty(true);
 }
 
@@ -339,17 +344,14 @@ async function ensureContourDisplay(index, item, visible) {
   if (needsFill) {
     overlay.fill = await ensureContourVolumePart(index, item, "fill", item.url, contourOpacity(mode));
   }
-  if (needsBorder) {
-    overlay.border = await ensureContourVolumePart(index, item, "border", item.border_url, 1);
-  }
   setContourPartOpacity(overlay.fill, needsFill ? contourOpacity(mode) : 0);
-  setContourPartOpacity(overlay.border, needsBorder ? 1 : 0);
 
   if (visible) {
     await ensureContourSurface(index, item, overlay);
   }
   setContourSurfaceVisible(overlay, visible);
-  return overlay.fill?.volume || overlay.border?.volume || null;
+  refreshContourLineOverlay();
+  return overlay.fill?.volume || null;
 }
 
 async function ensureContourVolumePart(index, item, part, url, opacity) {
@@ -485,6 +487,177 @@ function setContourSurfaceVisible(overlay, visible) {
     mesh.visible = visible;
     state.nv.drawScene();
   }
+  refreshContourLineOverlay();
+}
+
+function refreshContourLineOverlay() {
+  if (state.isDrawingScene) {
+    return;
+  }
+  const svg = el.contourLineOverlay;
+  if (!svg || !state.nv?.canvas || !state.loadedImageId) {
+    clearContourLineOverlay();
+    return;
+  }
+  const cssWidth = state.nv.canvas.clientWidth || state.nv.canvas.width;
+  const cssHeight = state.nv.canvas.clientHeight || state.nv.canvas.height;
+  svg.setAttribute("viewBox", `0 0 ${cssWidth} ${cssHeight}`);
+  svg.replaceChildren();
+
+  const screenSlices = (state.nv.screenSlices || []).filter((slice) => slice.axCorSag <= SLICE_TYPE_SAGITTAL);
+  if (screenSlices.length === 0) {
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (const index of state.selected.contour) {
+    const mode = contourRenderMode(index);
+    if (!contourModeShowsBorder(mode)) {
+      continue;
+    }
+    const overlay = state.overlayVolumes.contour.get(index);
+    const mesh = overlay?.surface?.mesh;
+    if (!mesh?.pts || !mesh?.tris) {
+      continue;
+    }
+    const color = contourColor(state.project.contours[index]);
+    for (const slice of screenSlices) {
+      const pathSegments = [];
+      for (const segment of contourSegmentsForSlice(mesh, slice)) {
+        const [a, b] = segment.map((point) => projectPointToSlice(point, slice, cssWidth, cssHeight));
+        if (!a || !b) {
+          continue;
+        }
+        pathSegments.push(`M ${a[0].toFixed(2)} ${a[1].toFixed(2)} L ${b[0].toFixed(2)} ${b[1].toFixed(2)}`);
+      }
+      if (pathSegments.length > 0) {
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", pathSegments.join(" "));
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", color);
+        path.setAttribute("stroke-width", "1.8");
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("stroke-linejoin", "round");
+        path.setAttribute("vector-effect", "non-scaling-stroke");
+        fragment.appendChild(path);
+      }
+    }
+  }
+  svg.appendChild(fragment);
+}
+
+function clearContourLineOverlay() {
+  el.contourLineOverlay?.replaceChildren();
+}
+
+function contourSegmentsForSlice(mesh, slice) {
+  const axis = sliceAxis(slice.axCorSag);
+  const plane = state.nv.frac2mm(state.nv.scene.crosshairPos)[axis];
+  const points = mesh.pts;
+  const triangles = mesh.tris;
+  const segments = [];
+  for (let i = 0; i < triangles.length; i += 3) {
+    const tri = [
+      meshPoint(points, triangles[i]),
+      meshPoint(points, triangles[i + 1]),
+      meshPoint(points, triangles[i + 2]),
+    ];
+    const intersections = [];
+    addPlaneIntersection(intersections, tri[0], tri[1], axis, plane);
+    addPlaneIntersection(intersections, tri[1], tri[2], axis, plane);
+    addPlaneIntersection(intersections, tri[2], tri[0], axis, plane);
+    const unique = uniquePoints(intersections);
+    if (unique.length >= 2) {
+      segments.push([unique[0], unique[1]]);
+    }
+  }
+  return segments;
+}
+
+function addPlaneIntersection(output, a, b, axis, plane) {
+  const da = a[axis] - plane;
+  const db = b[axis] - plane;
+  const epsilon = 1e-4;
+  if (Math.abs(da) < epsilon && Math.abs(db) < epsilon) {
+    output.push(a, b);
+    return;
+  }
+  if (Math.abs(da) < epsilon) {
+    output.push(a);
+    return;
+  }
+  if (Math.abs(db) < epsilon) {
+    output.push(b);
+    return;
+  }
+  if (da * db > 0) {
+    return;
+  }
+  const t = da / (da - db);
+  output.push([
+    a[0] + t * (b[0] - a[0]),
+    a[1] + t * (b[1] - a[1]),
+    a[2] + t * (b[2] - a[2]),
+  ]);
+}
+
+function uniquePoints(points) {
+  const unique = [];
+  for (const point of points) {
+    if (!unique.some((other) => distanceSquared(point, other) < 1e-6)) {
+      unique.push(point);
+    }
+  }
+  return unique;
+}
+
+function projectPointToSlice(point, slice, cssWidth, cssHeight) {
+  const tile = slice.leftTopWidthHeight;
+  const dpr = state.nv.uiData?.dpr || 1;
+  const xMm = sliceCoordinateX(point, slice.axCorSag);
+  const yMm = sliceCoordinateY(point, slice.axCorSag);
+  const x = tile[0] + ((xMm - slice.leftTopMM[0]) / slice.fovMM[0]) * tile[2];
+  const y = tile[1] + ((slice.leftTopMM[1] - yMm) / slice.fovMM[1]) * tile[3];
+  if (x < tile[0] - 2 || x > tile[0] + tile[2] + 2 || y < tile[1] - 2 || y > tile[1] + tile[3] + 2) {
+    return null;
+  }
+  return [x / dpr, y / dpr].map((value, index) => {
+    const max = index === 0 ? cssWidth : cssHeight;
+    return Math.max(0, Math.min(max, value));
+  });
+}
+
+function meshPoint(points, index) {
+  const offset = index * 3;
+  return [points[offset], points[offset + 1], points[offset + 2]];
+}
+
+function distanceSquared(a, b) {
+  return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+}
+
+function sliceAxis(axCorSag) {
+  if (axCorSag === SLICE_TYPE_CORONAL) {
+    return 1;
+  }
+  if (axCorSag === SLICE_TYPE_SAGITTAL) {
+    return 0;
+  }
+  return 2;
+}
+
+function sliceCoordinateX(point, axCorSag) {
+  if (axCorSag === SLICE_TYPE_SAGITTAL) {
+    return point[1];
+  }
+  return point[0];
+}
+
+function sliceCoordinateY(point, axCorSag) {
+  if (axCorSag === SLICE_TYPE_AXIAL) {
+    return point[1];
+  }
+  return point[2];
 }
 
 function overlayDescriptor(kind, index, item, visible) {
@@ -502,7 +675,7 @@ function contourVolumeDescriptor(index, item, part, url, opacity) {
   const name = volumeFileName(item, "Contour");
   return {
     url,
-    name: part === "border" ? name.replace(/\.[^.]+$/, ".border.mha") : name,
+    name,
     colormap,
     opacity,
     visible: true,
@@ -1238,6 +1411,23 @@ function applyViewerLayout() {
   }
   state.nv.setCustomLayout(VIEWER_LAYOUT);
   debugLog("Applied NiiVue custom viewer layout", VIEWER_LAYOUT);
+}
+
+function installContourLineRenderer() {
+  if (!state.nv || typeof state.nv.drawScene !== "function") {
+    return;
+  }
+  const originalDrawScene = state.nv.drawScene.bind(state.nv);
+  state.nv.drawScene = (...args) => {
+    state.isDrawingScene = true;
+    try {
+      return originalDrawScene(...args);
+    } finally {
+      state.isDrawingScene = false;
+      refreshContourLineOverlay();
+    }
+  };
+  state.nv.onLocationChange = () => refreshContourLineOverlay();
 }
 
 function debugLog(message, payload) {

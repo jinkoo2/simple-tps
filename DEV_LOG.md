@@ -87,6 +87,8 @@
   for explicit axial/render/coronal/sagittal tile placement.
 - Changed plan selection so associated dose objects remain unchecked and are
   not loaded until the user explicitly enables a dose node.
+- Replaced voxel-mask contour borders with an SVG contour-line overlay computed
+  from contour surface intersections with the displayed 2D slice planes.
 
 ## Open Implementation Notes
 
