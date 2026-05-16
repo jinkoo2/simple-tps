@@ -83,8 +83,8 @@
   viewer, plus per-contour inside/border/inside+border display controls.
 - Fixed contour overlay colormaps to use NiiVue's expected 0-255 index range
   and added web runtime dependencies for derived contour border/surface objects.
-- Swapped the displayed top and bottom rows of NiiVue's four-panel multiplanar
-  grid to match the requested viewer layout.
+- Replaced the viewer row-swap shim with NiiVue's supported custom layout API
+  for explicit axial/render/coronal/sagittal tile placement.
 
 ## Open Implementation Notes
 

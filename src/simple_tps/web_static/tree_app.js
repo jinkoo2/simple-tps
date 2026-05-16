@@ -4,9 +4,16 @@ import { Niivue } from "https://unpkg.com/@niivue/niivue@0.57.0/dist/index.js";
 
 const h = React.createElement;
 const LOG_PREFIX = "[simple-tps]";
-const MULTIPLANAR_LAYOUT_GRID = 2;
-const MULTIPLANAR_SHOW_RENDER_ALWAYS = 1;
 const SLICE_TYPE_RENDER = 4;
+const SLICE_TYPE_AXIAL = 0;
+const SLICE_TYPE_CORONAL = 1;
+const SLICE_TYPE_SAGITTAL = 2;
+const VIEWER_LAYOUT = [
+  { sliceType: SLICE_TYPE_AXIAL, position: [0, 0, 0.5, 0.5] },
+  { sliceType: SLICE_TYPE_RENDER, position: [0.5, 0, 0.5, 0.5] },
+  { sliceType: SLICE_TYPE_CORONAL, position: [0, 0.5, 0.5, 0.5] },
+  { sliceType: SLICE_TYPE_SAGITTAL, position: [0.5, 0.5, 0.5, 0.5] },
+];
 const CONTOUR_RENDER_MODES = {
   inside: "Inside",
   border: "Border",
@@ -65,14 +72,11 @@ async function main() {
     crosshairColor: [0.1, 0.85, 0.72, 1],
     heroImageFraction: 0,
     heroSliceType: SLICE_TYPE_RENDER,
-    multiplanarEqualSize: true,
-    multiplanarLayout: MULTIPLANAR_LAYOUT_GRID,
-    multiplanarShowRender: MULTIPLANAR_SHOW_RENDER_ALWAYS,
     textHeight: 0.035,
   });
   await state.nv.attachTo("niivue-canvas");
   disableRenderVolumeRaycast();
-  swapMultiplanarGridRows();
+  applyViewerLayout();
   setViewerEmpty(true);
 
   el.reloadButton.addEventListener("click", () => reloadCurrentPatient());
@@ -1228,23 +1232,13 @@ function disableRenderVolumeRaycast() {
   debugLog("Disabled 3D image ray-casting; render tile will show contour meshes only");
 }
 
-function swapMultiplanarGridRows() {
-  if (!state.nv || typeof state.nv.draw2D !== "function" || typeof state.nv.draw3D !== "function") {
+function applyViewerLayout() {
+  if (!state.nv || typeof state.nv.setCustomLayout !== "function") {
+    debugWarn("NiiVue custom layout API is unavailable");
     return;
   }
-  const originalDraw2D = state.nv.draw2D.bind(state.nv);
-  const originalDraw3D = state.nv.draw3D.bind(state.nv);
-  const mirrorTile = (tile) => {
-    if (!Array.isArray(tile) || tile.length < 4 || state.nv.opts.sliceType !== state.nv.sliceTypeMultiplanar) {
-      return tile;
-    }
-    const mirrored = [...tile];
-    mirrored[1] = state.nv.effectiveCanvasHeight() - tile[1] - tile[3];
-    return mirrored;
-  };
-  state.nv.draw2D = (leftTopWidthHeight, ...args) => originalDraw2D(mirrorTile(leftTopWidthHeight), ...args);
-  state.nv.draw3D = (leftTopWidthHeight, ...args) => originalDraw3D(mirrorTile(leftTopWidthHeight), ...args);
-  debugLog("Swapped NiiVue multiplanar grid rows");
+  state.nv.setCustomLayout(VIEWER_LAYOUT);
+  debugLog("Applied NiiVue custom viewer layout", VIEWER_LAYOUT);
 }
 
 function debugLog(message, payload) {
