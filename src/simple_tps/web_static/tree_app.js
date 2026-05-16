@@ -617,7 +617,8 @@ function projectPointToSlice(point, slice, cssWidth, cssHeight) {
   const xMm = sliceCoordinateX(point, slice.axCorSag);
   const yMm = sliceCoordinateY(point, slice.axCorSag);
   const x = tile[0] + ((xMm - slice.leftTopMM[0]) / slice.fovMM[0]) * tile[2];
-  const y = tile[1] + ((slice.leftTopMM[1] - yMm) / slice.fovMM[1]) * tile[3];
+  const topMm = slice.leftTopMM[1] + slice.fovMM[1];
+  const y = tile[1] + ((topMm - yMm) / slice.fovMM[1]) * tile[3];
   if (x < tile[0] - 2 || x > tile[0] + tile[2] + 2 || y < tile[1] - 2 || y > tile[1] + tile[3] + 2) {
     return null;
   }

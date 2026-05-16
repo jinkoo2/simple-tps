@@ -89,6 +89,8 @@
   not loaded until the user explicitly enables a dose node.
 - Replaced voxel-mask contour borders with an SVG contour-line overlay computed
   from contour surface intersections with the displayed 2D slice planes.
+- Fixed the contour-line overlay projection to use NiiVue's 2D slice tile
+  vertical bounds instead of treating the lower slice bound as the top bound.
 
 ## Open Implementation Notes
 
