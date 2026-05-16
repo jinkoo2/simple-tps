@@ -72,6 +72,7 @@ async function main() {
   });
   await state.nv.attachTo("niivue-canvas");
   disableRenderVolumeRaycast();
+  swapMultiplanarGridRows();
   setViewerEmpty(true);
 
   el.reloadButton.addEventListener("click", () => reloadCurrentPatient());
@@ -1225,6 +1226,25 @@ function disableRenderVolumeRaycast() {
   }
   state.nv.drawImage3D = () => {};
   debugLog("Disabled 3D image ray-casting; render tile will show contour meshes only");
+}
+
+function swapMultiplanarGridRows() {
+  if (!state.nv || typeof state.nv.draw2D !== "function" || typeof state.nv.draw3D !== "function") {
+    return;
+  }
+  const originalDraw2D = state.nv.draw2D.bind(state.nv);
+  const originalDraw3D = state.nv.draw3D.bind(state.nv);
+  const mirrorTile = (tile) => {
+    if (!Array.isArray(tile) || tile.length < 4 || state.nv.opts.sliceType !== state.nv.sliceTypeMultiplanar) {
+      return tile;
+    }
+    const mirrored = [...tile];
+    mirrored[1] = state.nv.effectiveCanvasHeight() - tile[1] - tile[3];
+    return mirrored;
+  };
+  state.nv.draw2D = (leftTopWidthHeight, ...args) => originalDraw2D(mirrorTile(leftTopWidthHeight), ...args);
+  state.nv.draw3D = (leftTopWidthHeight, ...args) => originalDraw3D(mirrorTile(leftTopWidthHeight), ...args);
+  debugLog("Swapped NiiVue multiplanar grid rows");
 }
 
 function debugLog(message, payload) {
