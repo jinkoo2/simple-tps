@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Niivue } from "https://unpkg.com/@niivue/niivue@0.57.0/dist/index.js";
 
 const h = React.createElement;
+const LOG_PREFIX = "[simple-tps]";
 
 const state = {
   config: null,
@@ -134,6 +135,7 @@ function initializeObjectSelection() {
 }
 
 async function selectImage(imageId) {
+  debugLog("selectImage", { imageId });
   state.selectedImageId = imageId || null;
   state.selected.dose = new Set();
   state.selected.contour = new Set();
@@ -148,13 +150,17 @@ async function selectImage(imageId) {
     renderApp();
     return;
   }
-  await loadBaseImage(selectedImage());
+  const image = selectedImage();
+  debugLog("selectedImage resolved", imageSummary(image));
+  await loadBaseImage(image);
   renderApp();
 }
 
 async function loadBaseImage(image) {
+  debugLog("loadBaseImage requested", imageSummary(image));
   state.loadedImageId = null;
   if (!image?.url) {
+    debugWarn("loadBaseImage skipped: image has no URL", imageSummary(image));
     state.selectedImageId = null;
     clearViewerVolumes();
     el.loadStatus.textContent = "No loadable image volume";
@@ -163,13 +169,24 @@ async function loadBaseImage(image) {
   clearViewerVolumes();
   el.loadStatus.textContent = "Loading image";
   try {
-    await state.nv.addVolumeFromUrl(volumeDescriptor(image, "Image", "gray", 1));
+    const descriptor = volumeDescriptor(image, "Image", "gray", 1);
+    debugLog("NiiVue loadVolumes start", descriptor);
+    await state.nv.loadVolumes([descriptor]);
     state.nv.setSliceType(state.nv.sliceTypeMultiplanar);
     state.loadedImageId = imageKey(image);
     setViewerEmpty(false);
     el.loadStatus.textContent = "Image loaded";
+    debugLog("NiiVue loadVolumes success", {
+      loadedImageId: state.loadedImageId,
+      volumeCount: state.nv.volumes?.length,
+      volumes: state.nv.volumes?.map((volume) => ({ id: volume.id, name: volume.name })),
+    });
   } catch (error) {
     console.error(error);
+    debugWarn("NiiVue loadVolumes failed", {
+      image: imageSummary(image),
+      error: error?.message || String(error),
+    });
     state.selectedImageId = null;
     state.loadedImageId = null;
     clearViewerVolumes();
@@ -178,6 +195,7 @@ async function loadBaseImage(image) {
 }
 
 function setViewerEmpty(empty) {
+  debugLog("setViewerEmpty", { empty });
   el.viewerFrame.classList.toggle("empty", empty);
   el.viewerPlaceholder.hidden = !empty;
 }
@@ -918,6 +936,36 @@ function imageLabel(image) {
 
 function imageKey(image) {
   return image.id || image.path;
+}
+
+function imageSummary(image) {
+  if (!image) {
+    return null;
+  }
+  return {
+    id: image.id,
+    type: image.type,
+    format: image.format,
+    path: image.path,
+    url: image.url,
+    metadataUrl: image.metadata_url,
+  };
+}
+
+function debugLog(message, payload) {
+  if (payload === undefined) {
+    console.log(LOG_PREFIX, message);
+  } else {
+    console.log(LOG_PREFIX, message, payload);
+  }
+}
+
+function debugWarn(message, payload) {
+  if (payload === undefined) {
+    console.warn(LOG_PREFIX, message);
+  } else {
+    console.warn(LOG_PREFIX, message, payload);
+  }
 }
 
 function contourColor(contour) {

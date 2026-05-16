@@ -73,6 +73,8 @@
   immediately, while the viewer separately tracks the successfully loaded image.
 - Switched base image loading to NiiVue's single-volume URL loader and added an
   explicit "Loading image" status before the canvas leaves its empty state.
+- Restored base image loading to NiiVue's `loadVolumes` path for MHA handling
+  and added console debug logging around image selection and load lifecycle.
 
 ## Open Implementation Notes
 
