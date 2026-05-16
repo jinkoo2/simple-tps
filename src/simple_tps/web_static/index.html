@@ -25,6 +25,16 @@
         <div class="toolbar">
           <button id="reload-button" type="button">Reload</button>
           <button id="property-toggle" type="button">Properties</button>
+          <label class="toolbar-field" for="slice-type-select">
+            <span>View</span>
+            <select id="slice-type-select">
+              <option value="multiplanar">Multiplanar</option>
+              <option value="axial">Axial</option>
+              <option value="sagittal">Sagittal</option>
+              <option value="coronal">Coronal</option>
+              <option value="render">Volume Renderer</option>
+            </select>
+          </label>
           <span id="load-status">No patient loaded</span>
         </div>
         <div id="viewer-frame" class="viewer-frame empty">

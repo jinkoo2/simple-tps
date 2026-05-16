@@ -91,6 +91,8 @@
   from contour surface intersections with the displayed 2D slice planes.
 - Fixed the contour-line overlay projection to use NiiVue's 2D slice tile
   vertical bounds instead of treating the lower slice bound as the top bound.
+- Added a toolbar slice-view selector for multiplanar, axial, sagittal,
+  coronal, and volume-renderer modes.
 
 ## Open Implementation Notes
 

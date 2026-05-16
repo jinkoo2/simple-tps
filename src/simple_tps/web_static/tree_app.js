@@ -4,10 +4,18 @@ import { Niivue } from "https://unpkg.com/@niivue/niivue@0.57.0/dist/index.js";
 
 const h = React.createElement;
 const LOG_PREFIX = "[simple-tps]";
+const SLICE_TYPE_MULTIPLANAR = 3;
 const SLICE_TYPE_RENDER = 4;
 const SLICE_TYPE_AXIAL = 0;
 const SLICE_TYPE_CORONAL = 1;
 const SLICE_TYPE_SAGITTAL = 2;
+const SLICE_VIEW_MODES = {
+  multiplanar: SLICE_TYPE_MULTIPLANAR,
+  axial: SLICE_TYPE_AXIAL,
+  sagittal: SLICE_TYPE_SAGITTAL,
+  coronal: SLICE_TYPE_CORONAL,
+  render: SLICE_TYPE_RENDER,
+};
 const VIEWER_LAYOUT = [
   { sliceType: SLICE_TYPE_AXIAL, position: [0, 0, 0.5, 0.5] },
   { sliceType: SLICE_TYPE_RENDER, position: [0.5, 0, 0.5, 0.5] },
@@ -27,6 +35,7 @@ const state = {
   selectedImageId: null,
   loadedImageId: null,
   selectedPlanId: null,
+  sliceViewMode: "multiplanar",
   selected: {
     dose: new Set(),
     contour: new Set(),
@@ -60,6 +69,7 @@ const el = {
   loadStatus: document.getElementById("load-status"),
   reloadButton: document.getElementById("reload-button"),
   propertyToggle: document.getElementById("property-toggle"),
+  sliceTypeSelect: document.getElementById("slice-type-select"),
 };
 
 let sidebarRoot = null;
@@ -88,6 +98,7 @@ async function main() {
     state.ui.propertyOpen = !state.ui.propertyOpen;
     renderApp();
   });
+  el.sliceTypeSelect.addEventListener("change", () => setSliceViewMode(el.sliceTypeSelect.value));
 
   state.config = await fetchJson("/api/config");
   await loadPatients();
@@ -201,7 +212,7 @@ async function loadBaseImage(image) {
     const descriptor = volumeDescriptor(image, "Image", "gray", 1);
     debugLog("NiiVue loadVolumes start", descriptor);
     await state.nv.loadVolumes([descriptor]);
-    state.nv.setSliceType(state.nv.sliceTypeMultiplanar);
+    applySliceViewMode();
     state.loadedImageId = imageKey(image);
     setViewerEmpty(false);
     el.loadStatus.textContent = "Image loaded";
@@ -1412,6 +1423,25 @@ function applyViewerLayout() {
   }
   state.nv.setCustomLayout(VIEWER_LAYOUT);
   debugLog("Applied NiiVue custom viewer layout", VIEWER_LAYOUT);
+}
+
+function setSliceViewMode(mode) {
+  state.sliceViewMode = SLICE_VIEW_MODES[mode] === undefined ? "multiplanar" : mode;
+  applySliceViewMode();
+}
+
+function applySliceViewMode() {
+  if (!state.nv) {
+    return;
+  }
+  el.sliceTypeSelect.value = state.sliceViewMode;
+  if (state.sliceViewMode === "multiplanar") {
+    applyViewerLayout();
+  } else if (typeof state.nv.clearCustomLayout === "function") {
+    state.nv.clearCustomLayout();
+  }
+  state.nv.setSliceType(SLICE_VIEW_MODES[state.sliceViewMode]);
+  refreshContourLineOverlay();
 }
 
 function installContourLineRenderer() {
