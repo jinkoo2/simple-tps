@@ -93,6 +93,9 @@
   vertical bounds instead of treating the lower slice bound as the top bound.
 - Added a toolbar slice-view selector for multiplanar, axial, sagittal,
   coronal, and volume-renderer modes.
+- Changed 2D contour border lines to trace the loaded contour mask volume
+  directly, while keeping the OBJ surface mesh for the 3D renderer. This avoids
+  mixing surface and volume coordinate spaces when drawing slice borders.
 
 ## Open Implementation Notes
 

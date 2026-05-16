@@ -349,13 +349,13 @@ async function ensureContourDisplay(index, item, visible) {
   let overlay = state.overlayVolumes.contour.get(index) || {};
   state.overlayVolumes.contour.set(index, overlay);
   const mode = contourRenderMode(index);
-  const needsFill = visible && contourModeShowsInside(mode);
-  const needsBorder = visible && contourModeShowsBorder(mode);
+  const needsFill = visible && (contourModeShowsInside(mode) || contourModeShowsBorder(mode));
+  const fillOpacity = contourModeShowsInside(mode) ? contourOpacity(mode) : 0;
 
   if (needsFill) {
-    overlay.fill = await ensureContourVolumePart(index, item, "fill", item.url, contourOpacity(mode));
+    overlay.fill = await ensureContourVolumePart(index, item, "fill", item.url, fillOpacity);
   }
-  setContourPartOpacity(overlay.fill, needsFill ? contourOpacity(mode) : 0);
+  setContourPartOpacity(overlay.fill, needsFill ? fillOpacity : 0);
 
   if (visible) {
     await ensureContourSurface(index, item, overlay);
@@ -527,15 +527,15 @@ function refreshContourLineOverlay() {
       continue;
     }
     const overlay = state.overlayVolumes.contour.get(index);
-    const mesh = overlay?.surface?.mesh;
-    if (!mesh?.pts || !mesh?.tris) {
+    const volume = overlay?.fill?.volume;
+    if (!volume?.img || !volume?.hdr?.dims) {
       continue;
     }
     const color = contourColor(state.project.contours[index]);
     for (const slice of screenSlices) {
       const pathSegments = [];
-      for (const segment of contourSegmentsForSlice(mesh, slice)) {
-        const [a, b] = segment.map((point) => projectPointToSlice(point, slice, cssWidth, cssHeight));
+      for (const segment of contourSegmentsForMaskSlice(volume, slice, cssWidth, cssHeight)) {
+        const [a, b] = segment;
         if (!a || !b) {
           continue;
         }
@@ -561,101 +561,153 @@ function clearContourLineOverlay() {
   el.contourLineOverlay?.replaceChildren();
 }
 
-function contourSegmentsForSlice(mesh, slice) {
-  const axis = sliceAxis(slice.axCorSag);
-  const plane = state.nv.frac2mm(state.nv.scene.crosshairPos)[axis];
-  const points = mesh.pts;
-  const triangles = mesh.tris;
+function contourSegmentsForMaskSlice(volume, slice, cssWidth, cssHeight) {
+  const dims = volume.dimsRAS || volume.hdr?.dims || [];
+  const nx = Number(dims[1]) || 0;
+  const ny = Number(dims[2]) || 0;
+  const nz = Number(dims[3]) || 0;
+  if (nx < 2 || ny < 2 || nz < 1) {
+    return [];
+  }
+
+  const vox = state.nv.frac2vox(state.nv.scene.crosshairPos);
+  const plane = maskSlicePlane(slice.axCorSag, vox, nx, ny, nz);
+  if (!plane) {
+    return [];
+  }
+
   const segments = [];
-  for (let i = 0; i < triangles.length; i += 3) {
-    const tri = [
-      meshPoint(points, triangles[i]),
-      meshPoint(points, triangles[i + 1]),
-      meshPoint(points, triangles[i + 2]),
-    ];
-    const intersections = [];
-    addPlaneIntersection(intersections, tri[0], tri[1], axis, plane);
-    addPlaneIntersection(intersections, tri[1], tri[2], axis, plane);
-    addPlaneIntersection(intersections, tri[2], tri[0], axis, plane);
-    const unique = uniquePoints(intersections);
-    if (unique.length >= 2) {
-      segments.push([unique[0], unique[1]]);
+  for (let v = 0; v < plane.height - 1; v += 1) {
+    for (let u = 0; u < plane.width - 1; u += 1) {
+      const code =
+        (maskValue(volume, plane.voxel(u, v)) ? 1 : 0) |
+        (maskValue(volume, plane.voxel(u + 1, v)) ? 2 : 0) |
+        (maskValue(volume, plane.voxel(u + 1, v + 1)) ? 4 : 0) |
+        (maskValue(volume, plane.voxel(u, v + 1)) ? 8 : 0);
+      for (const [edgeA, edgeB] of marchingSquaresEdges(code)) {
+        const pointA = maskPlaneEdgePoint(u, v, edgeA);
+        const pointB = maskPlaneEdgePoint(u, v, edgeB);
+        segments.push([
+          projectMaskPlanePoint(pointA, plane, volume, slice, cssWidth, cssHeight),
+          projectMaskPlanePoint(pointB, plane, volume, slice, cssWidth, cssHeight),
+        ]);
+      }
     }
   }
   return segments;
 }
 
-function addPlaneIntersection(output, a, b, axis, plane) {
-  const da = a[axis] - plane;
-  const db = b[axis] - plane;
-  const epsilon = 1e-4;
-  if (Math.abs(da) < epsilon && Math.abs(db) < epsilon) {
-    output.push(a, b);
-    return;
+function maskSlicePlane(axCorSag, vox, nx, ny, nz) {
+  if (axCorSag === SLICE_TYPE_AXIAL) {
+    const z = clampIndex(Math.round(vox[2]), nz);
+    return {
+      width: nx,
+      height: ny,
+      axis: axCorSag,
+      voxel: (u, v) => [u, v, z],
+    };
   }
-  if (Math.abs(da) < epsilon) {
-    output.push(a);
-    return;
+  if (axCorSag === SLICE_TYPE_CORONAL) {
+    const y = clampIndex(Math.round(vox[1]), ny);
+    return {
+      width: nx,
+      height: nz,
+      axis: axCorSag,
+      voxel: (u, v) => [u, y, v],
+    };
   }
-  if (Math.abs(db) < epsilon) {
-    output.push(b);
-    return;
+  if (axCorSag === SLICE_TYPE_SAGITTAL) {
+    const x = clampIndex(Math.round(vox[0]), nx);
+    return {
+      width: ny,
+      height: nz,
+      axis: axCorSag,
+      voxel: (u, v) => [x, u, v],
+    };
   }
-  if (da * db > 0) {
-    return;
-  }
-  const t = da / (da - db);
-  output.push([
-    a[0] + t * (b[0] - a[0]),
-    a[1] + t * (b[1] - a[1]),
-    a[2] + t * (b[2] - a[2]),
-  ]);
+  return null;
 }
 
-function uniquePoints(points) {
-  const unique = [];
-  for (const point of points) {
-    if (!unique.some((other) => distanceSquared(point, other) < 1e-6)) {
-      unique.push(point);
-    }
+function maskValue(volume, voxel) {
+  if (typeof volume.getValue === "function") {
+    return volume.getValue(voxel[0], voxel[1], voxel[2]) > 0.5;
   }
-  return unique;
+  const dims = volume.hdr.dims;
+  const index = voxel[0] + voxel[1] * dims[1] + voxel[2] * dims[1] * dims[2];
+  return volume.img[index] > 0.5;
 }
 
-function projectPointToSlice(point, slice, cssWidth, cssHeight) {
+function marchingSquaresEdges(code) {
+  switch (code) {
+    case 1:
+    case 14:
+      return [["left", "bottom"]];
+    case 2:
+    case 13:
+      return [["bottom", "right"]];
+    case 3:
+    case 12:
+      return [["left", "right"]];
+    case 4:
+    case 11:
+      return [["right", "top"]];
+    case 5:
+      return [["left", "top"], ["bottom", "right"]];
+    case 6:
+    case 9:
+      return [["bottom", "top"]];
+    case 7:
+    case 8:
+      return [["left", "top"]];
+    case 10:
+      return [["bottom", "left"], ["right", "top"]];
+    default:
+      return [];
+  }
+}
+
+function maskPlaneEdgePoint(u, v, edge) {
+  if (edge === "bottom") {
+    return [u + 0.5, v];
+  }
+  if (edge === "right") {
+    return [u + 1, v + 0.5];
+  }
+  if (edge === "top") {
+    return [u + 0.5, v + 1];
+  }
+  return [u, v + 0.5];
+}
+
+function projectMaskPlanePoint(point, plane, volume, slice, cssWidth, cssHeight) {
   const tile = slice.leftTopWidthHeight;
   const dpr = state.nv.uiData?.dpr || 1;
-  const xMm = sliceCoordinateX(point, slice.axCorSag);
-  const yMm = sliceCoordinateY(point, slice.axCorSag);
-  const x = tile[0] + ((xMm - slice.leftTopMM[0]) / slice.fovMM[0]) * tile[2];
-  const topMm = slice.leftTopMM[1] + slice.fovMM[1];
-  const y = tile[1] + ((topMm - yMm) / slice.fovMM[1]) * tile[3];
-  if (x < tile[0] - 2 || x > tile[0] + tile[2] + 2 || y < tile[1] - 2 || y > tile[1] + tile[3] + 2) {
-    return null;
-  }
+  const mm = maskPlanePointToMM(point, plane, volume);
+  const displayX = sliceCoordinateX(mm, plane.axis);
+  const displayY = sliceCoordinateY(mm, plane.axis);
+  const fracX = (displayX - slice.leftTopMM[0]) / slice.fovMM[0];
+  const fracY = (displayY - slice.leftTopMM[1]) / slice.fovMM[1];
+  const x = tile[0] + fracX * tile[2];
+  const y = tile[1] + (1 - fracY) * tile[3];
   return [x / dpr, y / dpr].map((value, index) => {
     const max = index === 0 ? cssWidth : cssHeight;
     return Math.max(0, Math.min(max, value));
   });
 }
 
-function meshPoint(points, index) {
-  const offset = index * 3;
-  return [points[offset], points[offset + 1], points[offset + 2]];
-}
-
-function distanceSquared(a, b) {
-  return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
-}
-
-function sliceAxis(axCorSag) {
-  if (axCorSag === SLICE_TYPE_CORONAL) {
-    return 1;
+function maskPlanePointToMM(point, plane, volume) {
+  const voxel = plane.voxel(point[0], point[1]);
+  const frac = typeof volume.convertVox2Frac === "function"
+    ? volume.convertVox2Frac(voxel)
+    : [
+        (voxel[0] + 0.5) / volume.hdr.dims[1],
+        (voxel[1] + 0.5) / volume.hdr.dims[2],
+        (voxel[2] + 0.5) / volume.hdr.dims[3],
+      ];
+  if (typeof volume.convertFrac2MM === "function") {
+    return volume.convertFrac2MM(frac);
   }
-  if (axCorSag === SLICE_TYPE_SAGITTAL) {
-    return 0;
-  }
-  return 2;
+  return state.nv.frac2mm(frac);
 }
 
 function sliceCoordinateX(point, axCorSag) {
@@ -670,6 +722,10 @@ function sliceCoordinateY(point, axCorSag) {
     return point[1];
   }
   return point[2];
+}
+
+function clampIndex(value, size) {
+  return Math.max(0, Math.min(size - 1, value));
 }
 
 function overlayDescriptor(kind, index, item, visible) {
