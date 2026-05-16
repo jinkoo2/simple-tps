@@ -79,6 +79,8 @@
   loads are in progress.
 - Forced the web viewer to use NiiVue's four-panel multiplanar grid with equal
   panel sizes and the volume renderer always visible.
+- Added on-demand contour border masks and contour surface meshes for the web
+  viewer, plus per-contour inside/border/inside+border display controls.
 
 ## Open Implementation Notes
 

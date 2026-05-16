@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import re
 from base64 import b64decode
 from hmac import compare_digest
 from http import HTTPStatus
@@ -132,6 +133,19 @@ class ViewerHandler(SimpleHTTPRequestHandler):
                 return
             self.send_json(project_payload(patient_key, project))
             return
+        if len(parts) == 4 and parts[1] == "contours":
+            try:
+                index = int(parts[2])
+                project = Project.open(project_dir)
+                if parts[3] == "border.mha":
+                    self.send_file(contour_border_path(project, index))
+                    return
+                if parts[3] == "surface.obj":
+                    self.send_file(contour_surface_path(project, index))
+                    return
+            except (IndexError, ProjectValidationError, RuntimeError, ValueError) as exc:
+                self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
+                return
         self.send_error(HTTPStatus.NOT_FOUND, "Patient API not found")
 
     def serve_patient_file(self, path: str) -> None:
@@ -250,15 +264,19 @@ def project_payload(patient_key: str, project: Project) -> dict[str, Any]:
 
 
 def objects_with_urls(patient_key: str, project: Project, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {
+    payload = []
+    for index, item in enumerate(items):
+        object_payload = {
             **item,
             "url": patient_file_url(patient_key, item.get("path")),
             "metadata_url": patient_file_url(patient_key, item.get("metadata")),
             "metadata_json": read_object_metadata(project, item),
         }
-        for item in items
-    ]
+        if (item.get("path") or "").startswith("contours/"):
+            object_payload["border_url"] = f"/api/patients/{patient_key}/contours/{index}/border.mha"
+            object_payload["surface_url"] = f"/api/patients/{patient_key}/contours/{index}/surface.obj"
+        payload.append(object_payload)
+    return payload
 
 
 def object_with_url(patient_key: str, path: str | None) -> dict[str, str] | None:
@@ -284,6 +302,67 @@ def read_object_metadata(project: Project, item: dict[str, Any]) -> dict[str, An
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
+
+
+def contour_border_path(project: Project, index: int) -> Path:
+    import SimpleITK as sitk
+
+    contour = project.manifest.get("contours", [])[index]
+    source = project.resolve_path(contour.get("path", ""))
+    if not source.is_file():
+        raise RuntimeError("Contour mask file not found")
+    cache = derived_contour_path(project, contour, ".border.mha")
+    if cache.is_file() and cache.stat().st_mtime >= source.stat().st_mtime:
+        return cache
+
+    image = sitk.ReadImage(str(source))
+    mask = sitk.BinaryThreshold(image, lowerThreshold=0.5, upperThreshold=1.0e9, insideValue=1, outsideValue=0)
+    border = sitk.BinaryContour(mask, fullyConnected=False, foregroundValue=1, backgroundValue=0)
+    border.CopyInformation(image)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    sitk.WriteImage(border, str(cache), True)
+    return cache
+
+
+def contour_surface_path(project: Project, index: int) -> Path:
+    import numpy as np
+    import SimpleITK as sitk
+    from skimage import measure
+
+    contour = project.manifest.get("contours", [])[index]
+    source = project.resolve_path(contour.get("path", ""))
+    if not source.is_file():
+        raise RuntimeError("Contour mask file not found")
+    cache = derived_contour_path(project, contour, ".surface.obj")
+    if cache.is_file() and cache.stat().st_mtime >= source.stat().st_mtime:
+        return cache
+
+    image = sitk.ReadImage(str(source))
+    mask = sitk.GetArrayFromImage(image) > 0
+    if not np.any(mask):
+        raise RuntimeError("Contour mask is empty")
+
+    vertices_zyx, faces, _normals, _values = measure.marching_cubes(mask.astype(np.float32), level=0.5, allow_degenerate=False)
+    vertices_xyz = vertices_zyx[:, [2, 1, 0]]
+    spacing = np.asarray(image.GetSpacing(), dtype=np.float64)
+    origin = np.asarray(image.GetOrigin(), dtype=np.float64)
+    direction = np.asarray(image.GetDirection(), dtype=np.float64).reshape(3, 3)
+    physical = origin + (vertices_xyz * spacing) @ direction.T
+
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    with cache.open("w", encoding="utf-8") as handle:
+        handle.write(f"# Simple TPS contour surface: {contour.get('name') or contour.get('id') or index}\n")
+        for x, y, z in physical:
+            handle.write(f"v {x:.6f} {y:.6f} {z:.6f}\n")
+        for a, b, c in faces + 1:
+            handle.write(f"f {int(a)} {int(b)} {int(c)}\n")
+    return cache
+
+
+def derived_contour_path(project: Project, contour: dict[str, Any], suffix: str) -> Path:
+    name = contour.get("id") or contour.get("name") or Path(contour.get("path", "contour")).stem
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(name)).strip("._") or "contour"
+    return project.root / "derived" / "contours" / f"{safe_name}{suffix}"
 
 
 def safe_join(root: Path, relative_path: str) -> Path | None:

@@ -7,6 +7,11 @@ const LOG_PREFIX = "[simple-tps]";
 const MULTIPLANAR_LAYOUT_GRID = 2;
 const MULTIPLANAR_SHOW_RENDER_ALWAYS = 1;
 const SLICE_TYPE_RENDER = 4;
+const CONTOUR_RENDER_MODES = {
+  inside: "Inside",
+  border: "Border",
+  inside_border: "Inside + Border",
+};
 
 const state = {
   config: null,
@@ -24,6 +29,7 @@ const state = {
     dose: new Map(),
     contour: new Map(),
   },
+  contourRenderModes: new Map(),
   busyCount: 0,
   nodeRegistry: new Map(),
   ui: {
@@ -65,6 +71,7 @@ async function main() {
     textHeight: 0.035,
   });
   await state.nv.attachTo("niivue-canvas");
+  disableRenderVolumeRaycast();
   setViewerEmpty(true);
 
   el.reloadButton.addEventListener("click", () => reloadCurrentPatient());
@@ -105,6 +112,7 @@ async function openPatient(patientKey) {
   state.ui.patientSearch = "";
   state.ui.selectedNodeId = patientNodeId();
   restoreExpandedNodes();
+  restoreContourRenderModes();
   el.loadStatus.textContent = "Patient loaded";
   renderApp();
 }
@@ -119,6 +127,7 @@ function clearPatientState(statusText) {
   state.planDetails = new Map();
   state.overlayVolumes.dose = new Map();
   state.overlayVolumes.contour = new Map();
+  state.contourRenderModes = new Map();
   state.nodeRegistry = new Map();
   state.ui.expandedNodeIds = new Set();
   el.loadStatus.textContent = statusText;
@@ -274,6 +283,9 @@ async function loadPlanDetails(plan) {
 }
 
 async function ensureOverlayVolume(kind, index, item, visible) {
+  if (kind === "contour") {
+    return ensureContourDisplay(index, item, visible);
+  }
   const overlay = state.overlayVolumes[kind].get(index);
   if (overlay?.volume) {
     setOverlayOpacity(overlay, visible);
@@ -308,6 +320,94 @@ async function ensureOverlayVolume(kind, index, item, visible) {
   } catch (error) {
     state.overlayVolumes[kind].delete(index);
     throw error;
+  } finally {
+    endBusy();
+  }
+}
+
+async function ensureContourDisplay(index, item, visible) {
+  let overlay = state.overlayVolumes.contour.get(index) || {};
+  state.overlayVolumes.contour.set(index, overlay);
+  const mode = contourRenderMode(index);
+  const needsFill = visible && contourModeShowsInside(mode);
+  const needsBorder = visible && contourModeShowsBorder(mode);
+
+  if (needsFill) {
+    overlay.fill = await ensureContourVolumePart(index, item, "fill", item.url, contourOpacity(mode));
+  }
+  if (needsBorder) {
+    overlay.border = await ensureContourVolumePart(index, item, "border", item.border_url, 1);
+  }
+  setContourPartOpacity(overlay.fill, needsFill ? contourOpacity(mode) : 0);
+  setContourPartOpacity(overlay.border, needsBorder ? 1 : 0);
+
+  if (visible) {
+    await ensureContourSurface(index, item, overlay);
+  }
+  setContourSurfaceVisible(overlay, visible);
+  return overlay.fill?.volume || overlay.border?.volume || null;
+}
+
+async function ensureContourVolumePart(index, item, part, url, opacity) {
+  if (!url) {
+    return null;
+  }
+  let overlay = state.overlayVolumes.contour.get(index) || {};
+  if (overlay[part]?.volume) {
+    setContourPartOpacity(overlay[part], opacity);
+    return overlay[part];
+  }
+  if (overlay[part]?.loading) {
+    const volume = await overlay[part].loading;
+    overlay = state.overlayVolumes.contour.get(index) || overlay;
+    setContourPartOpacity(overlay[part], opacity);
+    return overlay[part] || { volume, opacity };
+  }
+
+  const descriptor = contourVolumeDescriptor(index, item, part, url, opacity);
+  beginBusy();
+  const loading = state.nv.addVolumeFromUrl(descriptor);
+  overlay[part] = { loading, opacity };
+  state.overlayVolumes.contour.set(index, overlay);
+  try {
+    const volume = await loading;
+    overlay = state.overlayVolumes.contour.get(index) || overlay;
+    overlay[part] = { volume, opacity };
+    state.overlayVolumes.contour.set(index, overlay);
+    return overlay[part];
+  } finally {
+    endBusy();
+  }
+}
+
+async function ensureContourSurface(index, item, overlay) {
+  if (!item.surface_url || overlay.surface?.mesh || overlay.surface?.loading) {
+    if (overlay.surface?.loading) {
+      await overlay.surface.loading;
+    }
+    return;
+  }
+  const color = hexToRgb(contourColor(item)) || hexToRgb("#e15759");
+  const descriptor = {
+    url: item.surface_url,
+    name: `${volumeFileName(item, "Contour").replace(/\.[^.]+$/, "")}.surface.obj`,
+    rgba255: [...color, 210],
+    opacity: 0.82,
+    visible: true,
+  };
+  beginBusy();
+  debugLog("NiiVue addMeshFromUrl start", descriptor);
+  const loading = state.nv.addMeshFromUrl(descriptor);
+  overlay.surface = { loading };
+  state.overlayVolumes.contour.set(index, overlay);
+  try {
+    const mesh = await loading;
+    overlay.surface = { mesh, opacity: descriptor.opacity };
+    state.overlayVolumes.contour.set(index, overlay);
+    debugLog("NiiVue addMeshFromUrl success", { index, id: mesh?.id, name: descriptor.name });
+  } catch (error) {
+    overlay.surface = { error };
+    debugWarn("NiiVue addMeshFromUrl failed", { index, error: String(error) });
   } finally {
     endBusy();
   }
@@ -359,6 +459,30 @@ function setOverlayOpacity(overlay, visible) {
   }
 }
 
+function setContourPartOpacity(part, opacity) {
+  if (!part?.volume) {
+    return;
+  }
+  part.opacity = opacity;
+  const volumeIndex = state.nv.getVolumeIndexByID(part.volume.id);
+  if (volumeIndex >= 0) {
+    state.nv.setOpacity(volumeIndex, opacity);
+  }
+}
+
+function setContourSurfaceVisible(overlay, visible) {
+  const mesh = overlay?.surface?.mesh;
+  if (!mesh) {
+    return;
+  }
+  if (typeof state.nv.setMeshProperty === "function") {
+    state.nv.setMeshProperty(mesh.id, "visible", visible);
+  } else {
+    mesh.visible = visible;
+    state.nv.drawScene();
+  }
+}
+
 function overlayDescriptor(kind, index, item, visible) {
   if (kind === "contour") {
     const color = contourColor(item);
@@ -368,8 +492,33 @@ function overlayDescriptor(kind, index, item, visible) {
   return volumeDescriptor(item, "Dose", "hot", visible ? overlayOpacity(kind) : 0);
 }
 
+function contourVolumeDescriptor(index, item, part, url, opacity) {
+  const color = contourColor(item);
+  const colormap = contourColormap(index, color);
+  const name = volumeFileName(item, "Contour");
+  return {
+    url,
+    name: part === "border" ? name.replace(/\.[^.]+$/, ".border.mha") : name,
+    colormap,
+    opacity,
+    visible: true,
+  };
+}
+
 function overlayOpacity(kind) {
   return kind === "contour" ? 0.46 : 0.36;
+}
+
+function contourOpacity(mode) {
+  return mode === "inside_border" ? 0.3 : overlayOpacity("contour");
+}
+
+function contourModeShowsInside(mode) {
+  return mode === "inside" || mode === "inside_border";
+}
+
+function contourModeShowsBorder(mode) {
+  return mode === "border" || mode === "inside_border";
 }
 
 function volumeDescriptor(item, fallbackName, colormap, opacity) {
@@ -568,9 +717,44 @@ function PropertyPane() {
               h("dd", { key: `${key}-dd` }, formatValue(value)),
             ]),
           ),
+          nodeItem?.type === "contour" && h(ContourPropertyControls, { contour: nodeItem.data, index: nodeItem.index }),
           property.json && h("pre", { className: "property-json" }, JSON.stringify(property.json, null, 2)),
         )
       : h("div", { className: "empty-state" }, "Select a tree node."),
+  );
+}
+
+function ContourPropertyControls({ contour, index }) {
+  const mode = contourRenderMode(index);
+  return h(
+    "section",
+    { className: "property-controls" },
+    h("h4", null, "Contour Rendering"),
+    h(
+      "div",
+      { className: "segmented-control", role: "radiogroup", "aria-label": "Contour rendering mode" },
+      Object.entries(CONTOUR_RENDER_MODES).map(([value, label]) =>
+        h(
+          "button",
+          {
+            key: value,
+            type: "button",
+            className: mode === value ? "active" : "",
+            role: "radio",
+            "aria-checked": mode === value,
+            onClick: () => setContourRenderMode(index, value),
+          },
+          label,
+        ),
+      ),
+    ),
+    h(
+      "p",
+      { className: "property-help" },
+      state.selected.contour.has(index)
+        ? `${contour.name || contour.id || "Contour"} is visible in ${CONTOUR_RENDER_MODES[mode].toLowerCase()} mode.`
+        : "Select the contour checkbox to display it.",
+    ),
   );
 }
 
@@ -731,6 +915,57 @@ function persistExpandedNodes() {
 
 function expandedStorageKey() {
   return state.project ? `simple-tps:tree-expanded:${state.project.key}` : null;
+}
+
+function contourRenderMode(index) {
+  return state.contourRenderModes.get(index) || "inside_border";
+}
+
+async function setContourRenderMode(index, mode) {
+  if (!CONTOUR_RENDER_MODES[mode]) {
+    return;
+  }
+  state.contourRenderModes.set(index, mode);
+  persistContourRenderModes();
+  if (state.selected.contour.has(index)) {
+    try {
+      await ensureContourDisplay(index, state.project.contours[index], true);
+    } catch (error) {
+      console.error(error);
+      el.loadStatus.textContent = `Load failed: ${error.message || error}`;
+    }
+  }
+  renderApp();
+}
+
+function restoreContourRenderModes() {
+  const key = contourModeStorageKey();
+  if (!key) {
+    state.contourRenderModes = new Map();
+    return;
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) || "{}");
+    state.contourRenderModes = new Map(
+      Object.entries(saved)
+        .map(([index, mode]) => [Number(index), mode])
+        .filter(([index, mode]) => Number.isInteger(index) && Boolean(CONTOUR_RENDER_MODES[mode])),
+    );
+  } catch (error) {
+    state.contourRenderModes = new Map();
+  }
+}
+
+function persistContourRenderModes() {
+  const key = contourModeStorageKey();
+  if (!key) {
+    return;
+  }
+  localStorage.setItem(key, JSON.stringify(Object.fromEntries(state.contourRenderModes)));
+}
+
+function contourModeStorageKey() {
+  return state.project ? `simple-tps:contour-render-modes:${state.project.key}` : null;
 }
 
 function selectTreeNode(itemId) {
@@ -982,6 +1217,14 @@ function imageSummary(image) {
     url: image.url,
     metadataUrl: image.metadata_url,
   };
+}
+
+function disableRenderVolumeRaycast() {
+  if (!state.nv || typeof state.nv.drawImage3D !== "function") {
+    return;
+  }
+  state.nv.drawImage3D = () => {};
+  debugLog("Disabled 3D image ray-casting; render tile will show contour meshes only");
 }
 
 function debugLog(message, payload) {
