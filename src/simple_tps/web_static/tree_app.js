@@ -1255,7 +1255,7 @@ function contourColormap(index, color) {
     G: [0, rgb[1]],
     B: [0, rgb[2]],
     A: [0, 255],
-    I: [0, 1],
+    I: [0, 255],
   });
   return name;
 }

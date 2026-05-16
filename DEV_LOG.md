@@ -81,6 +81,8 @@
   panel sizes and the volume renderer always visible.
 - Added on-demand contour border masks and contour surface meshes for the web
   viewer, plus per-contour inside/border/inside+border display controls.
+- Fixed contour overlay colormaps to use NiiVue's expected 0-255 index range
+  and added web runtime dependencies for derived contour border/surface objects.
 
 ## Open Implementation Notes
 

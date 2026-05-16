@@ -143,7 +143,7 @@ class ViewerHandler(SimpleHTTPRequestHandler):
                 if parts[3] == "surface.obj":
                     self.send_file(contour_surface_path(project, index))
                     return
-            except (IndexError, ProjectValidationError, RuntimeError, ValueError) as exc:
+            except (ImportError, IndexError, OSError, ProjectValidationError, RuntimeError, ValueError) as exc:
                 self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
                 return
         self.send_error(HTTPStatus.NOT_FOUND, "Patient API not found")
@@ -333,7 +333,7 @@ def contour_surface_path(project: Project, index: int) -> Path:
     source = project.resolve_path(contour.get("path", ""))
     if not source.is_file():
         raise RuntimeError("Contour mask file not found")
-    cache = derived_contour_path(project, contour, ".surface.obj")
+    cache = derived_contour_path(project, contour, ".surface.v2.obj")
     if cache.is_file() and cache.stat().st_mtime >= source.stat().st_mtime:
         return cache
 
@@ -342,7 +342,12 @@ def contour_surface_path(project: Project, index: int) -> Path:
     if not np.any(mask):
         raise RuntimeError("Contour mask is empty")
 
-    vertices_zyx, faces, _normals, _values = measure.marching_cubes(mask.astype(np.float32), level=0.5, allow_degenerate=False)
+    vertices_zyx, faces, _normals, _values = measure.marching_cubes(
+        mask.astype(np.float32),
+        level=0.5,
+        step_size=2,
+        allow_degenerate=False,
+    )
     vertices_xyz = vertices_zyx[:, [2, 1, 0]]
     spacing = np.asarray(image.GetSpacing(), dtype=np.float64)
     origin = np.asarray(image.GetOrigin(), dtype=np.float64)

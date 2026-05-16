@@ -12,7 +12,7 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 
 RUN python -m pip install --upgrade pip setuptools wheel \
-    && python -m pip install .
+    && python -m pip install ".[web]"
 
 WORKDIR /workspace
 

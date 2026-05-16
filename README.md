@@ -12,7 +12,7 @@ Start with [PROJECT_PLAN.md](PROJECT_PLAN.md).
 ```bash
 conda activate simple-tps
 cd /home/jk/projects/tps/simple-tps
-python -m pip install -e .
+python -m pip install -e ".[web]"
 ```
 
 Verify the install:
@@ -24,7 +24,7 @@ stps --help
 
 Both commands are installed by the project and run the same CLI.
 
-For DICOM import and CT conversion examples, install the imaging dependency:
+For DICOM import and CT conversion examples, install the DICOM dependency group:
 
 ```bash
 python -m pip install -e ".[dicom]"

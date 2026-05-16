@@ -15,10 +15,16 @@ authors = [
 dependencies = []
 
 [project.optional-dependencies]
+web = [
+  "numpy>=1.24",
+  "SimpleITK>=2.3",
+  "scikit-image>=0.22",
+]
 dicom = [
   "numpy>=1.24",
   "pydicom>=2.4",
   "SimpleITK>=2.3",
+  "scikit-image>=0.22",
 ]
 dev = [
   "pytest>=8"
