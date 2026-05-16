@@ -240,7 +240,7 @@ function endBusy() {
 
 async function selectPlan(planId) {
   state.selectedPlanId = planId || null;
-  state.selected.dose = new Set(selectedPlanDoses().map(({ index }) => index));
+  state.selected.dose = new Set();
   updateAllDoseVisibility();
   renderApp();
   if (state.selectedPlanId) {
@@ -270,7 +270,6 @@ async function loadSelectedPlanObjects() {
       el.loadStatus.textContent = "Select an image before loading plan objects";
       return;
     }
-    await Promise.all(selectedPlanDoses().map(({ dose, index }) => ensureOverlayVolume("dose", index, dose, true)));
     el.loadStatus.textContent = "Plan loaded";
   } finally {
     endBusy();

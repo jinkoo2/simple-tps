@@ -85,6 +85,8 @@
   and added web runtime dependencies for derived contour border/surface objects.
 - Replaced the viewer row-swap shim with NiiVue's supported custom layout API
   for explicit axial/render/coronal/sagittal tile placement.
+- Changed plan selection so associated dose objects remain unchecked and are
+  not loaded until the user explicitly enables a dose node.
 
 ## Open Implementation Notes
 
